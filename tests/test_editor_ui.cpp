@@ -87,7 +87,7 @@ int main(int argc,char** argv){
         qCritical("Selecting the Up face in the overview did not activate its independent UV mapping");return 15;
     }
     if(atlas->width()<260){qCritical("UV canvas is still constrained to a tiny dock");return 16;}
-    model->click();QTest::qWait(180);
+    if(argc>2 && !editor.grab().save(QString::fromLocal8Bit(argv[2]))){qCritical("Could not capture six-face UV workspace");return 17;}\n    model->click();QTest::qWait(180);
     if(argc>1 && !editor.grab().save(QString::fromLocal8Bit(argv[1]))){qCritical("Could not write UI screenshot");return 9;}
     qInfo("Editor UX test passed: Build, Model, UV, Outliner search and OpenGL");
     return 0;

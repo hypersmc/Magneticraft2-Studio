@@ -82,7 +82,7 @@ if(STUDIO_BUILD_TESTS)
         add_test(NAME studio-texture-assets-tests COMMAND studio-texture-assets-tests)
         add_executable(studio-uv-overview-tests tests/test_uv_overview.cpp
             src/ui/UvFaceOverview.hpp src/ui/UvFaceOverview.cpp)
-        target_link_libraries(studio-uv-overview-tests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+        target_link_libraries(studio-uv-overview-tests PRIVATE studio_core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
             src/ui/StartPage.hpp src/ui/StartPage.cpp

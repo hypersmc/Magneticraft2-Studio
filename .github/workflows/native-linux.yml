@@ -30,7 +30,7 @@ jobs:
       - name: Ore Washer reference model import screenshot
         run: timeout 20s env LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --sample-washer --smoke --screenshot build/studio-washer.png
       - name: Native editor UX smoke test (workspaces/outliner)
-        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-editor-ui-tests build/studio-editor-ux.png
+        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-editor-ui-tests build/studio-editor-ux.png build/studio-uv-workspace.png
       - name: Six-face UV overview mouse test
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-uv-overview-tests build/studio-uv-six-faces.png
       - name: Preserve GUI preview
@@ -44,4 +44,4 @@ jobs:
             build/studio-editor-ux.png
             build/studio-washer.png
             build/studio-textured.png
-            build/studio-uv-six-faces.png
+            build/studio-uv-six-faces.png\n            build/studio-uv-workspace.png
