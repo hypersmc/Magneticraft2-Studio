@@ -44,4 +44,5 @@ jobs:
             build/studio-editor-ux.png
             build/studio-washer.png
             build/studio-textured.png
-            build/studio-uv-six-faces.png\n            build/studio-uv-workspace.png
+            build/studio-uv-six-faces.png
+            build/studio-uv-workspace.png
