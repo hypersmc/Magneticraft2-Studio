@@ -64,7 +64,10 @@ struct Motion {
 };
 using Dimensions = std::array<int,3>;
 using Cells = std::unordered_map<Cell, std::string, CellHash>;
+enum class ProjectKind { Multiblock, JavaBlock };
+
 struct Project {
+    ProjectKind kind = ProjectKind::Multiblock;
     std::string name = "Untitled Multiblock";
     std::string id = "untitled_multiblock";
     Dimensions dimensions{5,3,5};
@@ -90,6 +93,10 @@ void resize(Project& p, Dimensions size);
 std::string nextPartId(const Project& p);
 Part makeBox(const Project& p, const Bounds& bounds = {{0,0,0},{1,1,1}});
 bool validBounds(Bounds box);
+// Java block models use coordinates -16..32 model pixels relative to the
+// block origin. Studio shows a positive 3x3x3 envelope, with the origin at (1,1,1).
+bool javaBlockBoundsAllowed(Bounds box);
+bool partBoundsAllowed(const Project& p, Bounds box);
 double snapSixteenth(double x);
 Dimensions rotatedDimensions(Dimensions dims, Direction direction);
 Cell rotateCell(Cell cell, Dimensions original, Direction direction);
@@ -97,6 +104,7 @@ Bounds rotateBox(Bounds bounds, Dimensions original, Direction direction);
 std::array<double,4> effectiveUV(const Part& part, int face);
 void makeManualUV(Part& part,int face);
 Project makeProject(const std::string& name, Dimensions dims);
+Project makeJavaBlockProject(const std::string& name);
 Project makeDemo();
 
 struct SlicedCuboid { Cell cell; Bounds local; std::string partId; std::string texture; std::string material; };

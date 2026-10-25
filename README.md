@@ -148,3 +148,29 @@ The new **TEXTURES / UV** dock (right-side tab) lets you import PNG images (up t
 Imported PNG files are embedded in your `.mcraftstudio.json` project, so files remain portable and offline. Existing Studio v1 projects and legacy structures still load. External Minecraft texture IDs remain metadata only until you import the corresponding image; the viewport uses generated material-specific pixel textures as placeholders rather than pretending to have Minecraft's atlas.
 
 **Deliberately still out of scope:** face picking via 3D raycasts for direct painting, an image brush/paint layer, Blockbench `.bbmodel` importer, texture-atlas packing for Minecraft export, complex group hierarchies, animation constraints, and Forge tiled formed-model rendering. These remain later milestones.
+
+## Project start screen (Linux native)
+
+Studio opens on **Home**. Choose a **Java Block Model** (fixed 3×3×3 authoring
+space, Minecraft element coordinate range −16..32 pixels, and Java block-model
+JSON export), or a **Magneticraft2 Multiblock** (user-defined dimensions up to
+128 blocks per axis, construction JSON and formed-model editing).
+
+The **Examples** area offers:
+
+- **Mechanical Ore Washer** — construction plus the actual imported static model
+  cuboids (not a finished animated assembly; texture PNGs still need importing).
+- **Mechanical Sifter** — real construction layout; no formed model supplied yet.
+- **Workshop Demo** — small simplified tutorial machine, explicitly marked as such.
+- **Copper Casing** — editable one-block Java model starter.
+
+Saved projects appear under **Recent Projects**. Use **Home** in the File menu
+or the header to return. An unsaved document is protected by a save prompt.
+Older `.mcraftstudio.json` projects remain compatible and open as multiblocks;
+new projects persist their `projectType` field. Java block models are confined
+to the model-space envelope, with no multiblock controller or construction JSON.
+
+The Java block-model exporter supports axis-aligned boxes and permitted
+single-axis 22.5°/45° element rotations. If a face requires more than one
+texture tile, it rejects the export rather than silently stretching pixels;
+create an appropriate manual UV mapping first.

@@ -1,4 +1,6 @@
 #include "ui/MainWindow.hpp"
+#include "ui/StartPage.hpp"
+#include <QPushButton>
 #include "ui/Viewport.hpp"
 #include <QApplication>
 #include <QToolButton>
@@ -14,7 +16,26 @@ int main(int argc,char** argv){
     QApplication app(argc,argv);
     MainWindow editor;
     editor.resize(1600,940);editor.show();
-    QTest::qWait(900);
+    QTest::qWait(240);
+    auto* home=editor.findChild<StartPage*>("StartPage");
+    if(!home || !editor.isAtHome() || !home->isVisible()){
+        qCritical("Startup should show the native Start page");return 10;
+    }
+    auto* newJava=home->findChild<QPushButton*>("NewJavaBlockCard");
+    auto* example=home->findChild<QPushButton*>("ExampleWorkshop");
+    auto* washer=home->findChild<QPushButton*>("ExampleOreWasher");
+    auto* sifter=home->findChild<QPushButton*>("ExampleSifter");
+    if(!newJava||!example||!washer||!sifter){qCritical("Start page project and examples missing");return 11;}
+    newJava->click();QTest::qWait(250);
+    if(editor.isAtHome()||editor.projectKind()!=ProjectKind::JavaBlock){
+        qCritical("Java model card did not create the right project type");return 12;
+    }
+    editor.openHome();QTest::qWait(100);
+    if(!editor.isAtHome()){qCritical("Home navigation failed");return 13;}
+    example->click();QTest::qWait(600);
+    if(editor.isAtHome()||editor.projectKind()!=ProjectKind::Multiblock){
+        qCritical("Workshop example failed to open");return 14;
+    }
     auto* build=editor.findChild<QToolButton*>("WorkspaceBuild");
     auto* model=editor.findChild<QToolButton*>("WorkspaceModel");
     auto* uv=editor.findChild<QToolButton*>("WorkspaceUV");

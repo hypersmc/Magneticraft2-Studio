@@ -31,11 +31,13 @@ void validateDimensions(Dimensions size) {
     for(int axis : size) if(axis<1 || axis>128) throw std::invalid_argument("Dimensions must be between 1 and 128 blocks");
 }
 void setCell(Project& p, Cell cell, const std::string& role) {
+    if(p.kind==ProjectKind::JavaBlock) throw std::invalid_argument("A Java block model has no multiblock construction cells");
     if(!contains(p.dimensions, cell)) throw std::out_of_range("Cell outside of multiblock");
     if(role.empty() || role=="Air") p.cells.erase(cell);
     else p.cells[cell] = role;
 }
 void resize(Project& p, Dimensions size) {
+    if(p.kind==ProjectKind::JavaBlock) throw std::invalid_argument("Java block envelope is fixed at 3 x 3 x 3");
     validateDimensions(size);
     p.dimensions = size;
     for(auto it=p.cells.begin(); it!=p.cells.end();) {
@@ -63,6 +65,15 @@ Part makeBox(const Project& p, const Bounds& bounds) {
 bool validBounds(Bounds box) {
     const auto finite=[](Vec3 v){return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);};
     return finite(box.from)&&finite(box.to) && box.from.x<box.to.x && box.from.y<box.to.y && box.from.z<box.to.z;
+}
+bool javaBlockBoundsAllowed(Bounds box) {
+    if(!validBounds(box))return false;
+    constexpr double eps=1e-7;
+    return box.from.x>=-eps && box.from.y>=-eps && box.from.z>=-eps &&
+        box.to.x<=3.0+eps && box.to.y<=3.0+eps && box.to.z<=3.0+eps;
+}
+bool partBoundsAllowed(const Project& p, Bounds box) {
+    return validBounds(box) && (p.kind!=ProjectKind::JavaBlock || javaBlockBoundsAllowed(box));
 }
 double snapSixteenth(double x) { return std::round(x*16.0)/16.0; }
 Dimensions rotatedDimensions(Dimensions dims, Direction dir) {
@@ -101,6 +112,16 @@ Project makeProject(const std::string& name, Dimensions dims) {
         {"FluidInput","magneticraft2:multiblock_fluid_input"},
         {"FluidOutput","magneticraft2:multiblock_fluid_output"}};
     p.cells[{dims[0]/2,0,dims[2]/2}]="Controller";
+    return p;
+}
+Project makeJavaBlockProject(const std::string& name) {
+    Project p=makeProject(name,{3,3,3});
+    p.kind=ProjectKind::JavaBlock;
+    p.cells.clear();
+    auto cube=makeBox(p,{{1,1,1},{2,2,2}});
+    cube.name="Block body";cube.group="Elements";
+    cube.material="copper";cube.texture="minecraft:block/copper_block";
+    p.parts.push_back(std::move(cube));
     return p;
 }
 Project makeDemo() {

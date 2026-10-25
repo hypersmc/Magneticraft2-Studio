@@ -50,6 +50,15 @@ int main() {
     threw=false;
     try { resize(p,{129,5,7}); } catch (const std::invalid_argument&) {threw=true;}
     assert(threw);
+    auto java=makeJavaBlockProject("Copper Casing");
+    assert(java.kind==ProjectKind::JavaBlock);
+    assert((java.dimensions==Dimensions{3,3,3}) && java.cells.empty());
+    assert(java.parts.size()==1 && javaBlockBoundsAllowed(java.parts[0].bounds));
+    assert(javaBlockBoundsAllowed({{0,0,0},{3,3,3}}));
+    assert(!javaBlockBoundsAllowed({{-1.0/16.0,0,0},{1,1,1}}));
+    assert(!javaBlockBoundsAllowed({{1,1,1},{3+1.0/16.0,2,2}}));
+    threw=false;try{resize(java,{5,3,3});}catch(const std::invalid_argument&){threw=true;}assert(threw);
+    threw=false;try{setCell(java,{1,1,1},"Frame");}catch(const std::invalid_argument&){threw=true;}assert(threw);
     auto demo=makeDemo();assert(demo.parts.size()>5);
     assert(demo.cells.at({2,0,2})=="Controller");
     auto invalid=b;invalid.motionId="motion_1";

@@ -2,6 +2,7 @@
 #include "LayerCanvas.hpp"
 #include "UvEditor.hpp"
 #include "Viewport.hpp"
+#include "StartPage.hpp"
 #include "io/ProjectIO.hpp"
 #include "io/BlockModelImport.hpp"
 #include "core/Modeling.hpp"
@@ -15,6 +16,7 @@
 #include <QTreeWidgetItemIterator>
 #include <QAbstractItemView>
 #include <QSpacerItem>
+#include <QStackedWidget>
 #include <QApplication>
 #include <QBuffer>
 #include <QImage>
@@ -80,6 +82,7 @@ static QDoubleSpinBox* coordinateSpin(QWidget* parent) {
 MainWindow::MainWindow(QWidget* parent):QMainWindow(parent),project_(makeDemo()) {
     buildUI();
     createMenus();
+    setupStartPage();
     // The bundled demo is a formed model: show its geometry when opening the
     // application. New empty documents start in Construction mode instead.
     mode_->setCurrentIndex(1);
@@ -99,6 +102,8 @@ MainWindow::MainWindow(QWidget* parent):QMainWindow(parent),project_(makeDemo())
         if(left&&right)resizeDocks({left,right},{255,345},Qt::Horizontal);
     });
     refreshAll();viewport_->resetCamera();
+    // An empty launch is intentional. The user chooses what to make or learn.
+    openHome();
 }
 void MainWindow::buildUI(){
     setObjectName("MainWindow");
@@ -514,16 +519,23 @@ void MainWindow::applyUvNumbers(){
 
 void MainWindow::createMenus(){
     auto* file=menuBar()->addMenu("&File");
-    file->addAction("New multiblock...",QKeySequence::New,this,&MainWindow::createNew);
+    file->addAction("Home / Start",QKeySequence("Ctrl+Shift+H"),this,&MainWindow::openHome);
+    file->addAction("New project...",QKeySequence::New,this,&MainWindow::createNew);
+    file->addAction("New Java block model...",this,&MainWindow::createJavaBlock);
+    file->addAction("New Magneticraft2 multiblock...",this,&MainWindow::createMultiblock);
     file->addAction("Open Studio project...",QKeySequence::Open,this,&MainWindow::openDialog);
     file->addAction("Save project",QKeySequence::Save,this,&MainWindow::save);
     file->addAction("Save project as...",QKeySequence::SaveAs,this,&MainWindow::saveAs);
     file->addSeparator();
-    file->addAction("Open Ore Washer reference project",this,&MainWindow::openOreWasherReference);
+    auto* examples=file->addMenu("Examples");
+    examples->addAction("Mechanical Ore Washer (real model)",this,[this](){openExample("washer");});
+    examples->addAction("Mechanical Sifter (construction)",this,[this](){openExample("sifter");});
+    examples->addAction("Workshop demonstration",this,[this](){openExample("workshop");});
+    examples->addAction("Copper casing (Java block)",this,[this](){openExample("casing");});
     file->addAction("Import Minecraft model JSON...",QKeySequence("Ctrl+I"),this,&MainWindow::importBlockModels);
     file->addAction("Import texture PNG...",this,&MainWindow::importPngTexture);
     file->addSeparator();
-    file->addAction("Export construction JSONs...",this,&MainWindow::exportDialog);
+    file->addAction("Export project...",this,&MainWindow::exportDialog);
     file->addSeparator();file->addAction("Quit",QKeySequence::Quit,this,&QWidget::close);
 
     auto* edit=menuBar()->addMenu("&Edit");
@@ -588,6 +600,10 @@ void MainWindow::createMenus(){
     connect(workspaceModel_,&QToolButton::clicked,this,[this](){uvWorkspace_=false;mode_->setCurrentIndex(1);if(auto* p=findChild<QDockWidget*>("PropertiesDock"))p->raise();syncWorkspaceChrome();});
     connect(workspaceUV_,&QToolButton::clicked,this,[this](){uvWorkspace_=true;mode_->setCurrentIndex(1);if(textureDock_)textureDock_->raise();syncWorkspaceChrome();});
     header->addSeparator();
+    auto* homeButton=new QPushButton("Home",this);
+    homeButton->setObjectName("HomeButton");
+    header->addWidget(homeButton);
+    connect(homeButton,&QPushButton::clicked,this,&MainWindow::openHome);
     auto* newButton=new QPushButton("New",this);
     auto* openButton=new QPushButton("Open",this);
     auto* saveButton=new QPushButton("Save",this);
@@ -776,7 +792,8 @@ void MainWindow::refreshScene(){
     view.selectedPart=selected_;
     viewport_->setScene(project_,view);
     layers_->setProject(&project_);layers_->setLayer(layer_);
-    const auto detail=QString("%1 × %2 × %3 blocks   /   %4 construction cells   /   %5 model parts")
+    const auto detail=QString("%1%2 × %3 × %4   /   %5 construction cells   /   %6 model parts")
+        .arg(project_.kind==ProjectKind::JavaBlock?"Java block  ·  ":"Multiblock  ·  ")
         .arg(project_.dimensions[0]).arg(project_.dimensions[1]).arg(project_.dimensions[2])
         .arg(project_.cells.size()).arg(project_.parts.size());
     if(statusMetrics_)statusMetrics_->setText(detail+"  ");
@@ -790,7 +807,9 @@ void MainWindow::updateTitle(){
     setWindowTitle(QString("%1%2  —  Magneticraft2 Studio")
         .arg(q(project_.name),dirty_?" *":""));
     if(projectHeading_)projectHeading_->setText(q(project_.name)+(dirty_?"  •":""));
-    if(projectContext_)projectContext_->setText(filename_.isEmpty()?"Unsaved Studio project":"Project  ·  "+QFileInfo(filename_).fileName());
+    if(projectContext_)projectContext_->setText(filename_.isEmpty()
+        ? (project_.kind==ProjectKind::JavaBlock?"Unsaved Java block model":"Unsaved multiblock")
+        : "Project  ·  "+QFileInfo(filename_).fileName());
     undoAction_->setEnabled(!undo_.empty());redoAction_->setEnabled(!redo_.empty());
 }
 void MainWindow::refreshAll(){
@@ -831,6 +850,10 @@ void MainWindow::addDrawnBox(double x0,double z0,double x1,double z1){
     if(mode_->currentIndex()!=1)return;
     auto bounds=drawnCuboid({x0,0,z0},{x1,0,z1},workPlane_->value(),
         drawHeight_->value(),snap_->currentData().toDouble());
+    if(!partBoundsAllowed(project_,bounds)){
+        statusBar()->showMessage("Java block model bounds are limited to 3 × 3 × 3 (−16..32 model pixels)",6500);
+        return;
+    }
     snapshot();
     auto part=makeBox(project_,bounds);
     part.name="Cube "+std::to_string(project_.parts.size()+1);
@@ -849,10 +872,16 @@ void MainWindow::switchWorkspace(){
     layerContainer_->setVisible(!isModel);
     if(toolRail_)toolRail_->setVisible(isModel);
     if(textureDock_)textureDock_->setVisible(isModel);
+    if(workspaceBuild_)workspaceBuild_->setEnabled(project_.kind!=ProjectKind::JavaBlock);
+    if(ghost_)ghost_->setEnabled(project_.kind!=ProjectKind::JavaBlock);
     if(snap_)snap_->setEnabled(isModel);
-    if(workPlane_)workPlane_->setEnabled(isModel);
+    if(workPlane_) {
+        workPlane_->setEnabled(isModel);
+        workPlane_->setRange(project_.kind==ProjectKind::JavaBlock?0.0:-100000.0,
+                             project_.kind==ProjectKind::JavaBlock?3.0:100000.0);
+    }
     if(drawHeight_)drawHeight_->setEnabled(isModel&&tool_->currentData().toInt()==int('b'));
-    if(ghost_)ghost_->setEnabled(isModel);
+    if(ghost_)ghost_->setEnabled(isModel&&project_.kind!=ProjectKind::JavaBlock);
     if(modelToolbar_)modelToolbar_->setVisible(isModel);
     syncWorkspaceChrome();
     refreshScene();
@@ -895,7 +924,7 @@ void MainWindow::renameSelected(){
 }
 void MainWindow::addPrimitive(const QString& kind){
     const double cx=project_.dimensions[0]*0.5,cz=project_.dimensions[2]*0.5;
-    const double y=workPlane_?workPlane_->value():0;
+    const double y=project_.kind==ProjectKind::JavaBlock?1.0:(workPlane_?workPlane_->value():0);
     Vec3 size{1,1,1};QString material="wood",group="Structure";
     if(kind=="Timber beam")size={4,.25,.25};
     else if(kind=="Frame post")size={.25,3,.25};
@@ -903,6 +932,15 @@ void MainWindow::addPrimitive(const QString& kind){
     else if(kind=="Drive shaft"){size={3,.1875,.1875};material="iron";group="Motion";}
     else group="Geometry";
     Bounds bounds{{cx-size.x*.5,y,cz-size.z*.5},{cx+size.x*.5,y+size.y,cz+size.z*.5}};
+    if(project_.kind==ProjectKind::JavaBlock){
+        const Vec3 extent=bounds.to-bounds.from;
+        bounds.from.x=std::max(0.0,std::min(3.0-std::min(3.0,extent.x),bounds.from.x));
+        bounds.from.y=std::max(0.0,std::min(3.0-std::min(3.0,extent.y),bounds.from.y));
+        bounds.from.z=std::max(0.0,std::min(3.0-std::min(3.0,extent.z),bounds.from.z));
+        bounds.to={bounds.from.x+std::min(3.0,extent.x),
+                   bounds.from.y+std::min(3.0,extent.y),
+                   bounds.from.z+std::min(3.0,extent.z)};
+    }
     auto part=makeBox(project_,bounds);
     part.name=kind.toStdString();part.group=group.toStdString();part.material=material.toStdString();
     snapshot();project_.parts.push_back(std::move(part));selected_=int(project_.parts.size())-1;
@@ -988,7 +1026,7 @@ void MainWindow::applyInspector(){
     part.bounds.to={to_[0]->value(),to_[1]->value(),to_[2]->value()};
     part.rotationDegrees={angle_[0]->value(),angle_[1]->value(),angle_[2]->value()};
     part.pivot={pivot_[0]->value(),pivot_[1]->value(),pivot_[2]->value()};
-    if(!validBounds(part.bounds)){
+    if(!partBoundsAllowed(project_,part.bounds)){
         statusBar()->showMessage("Invalid cuboid dimensions: each Min must be smaller than Max",5000);
         return;
     }
@@ -1010,9 +1048,18 @@ void MainWindow::applyTransformDelta(double amount,char axis,char tool){
     double* hi=axis=='x'?&part.bounds.to.x:axis=='y'?&part.bounds.to.y:&part.bounds.to.z;
     double* pivot=axis=='x'?&part.pivot.x:axis=='y'?&part.pivot.y:&part.pivot.z;
     double* angle=axis=='x'?&part.rotationDegrees.x:axis=='y'?&part.rotationDegrees.y:&part.rotationDegrees.z;
-    if(tool=='w'){*lo+=amount;*hi+=amount;*pivot+=amount;}
+    if(tool=='w'){
+        if(project_.kind==ProjectKind::JavaBlock){
+            amount=std::clamp(amount,0.0-*lo,3.0-*hi);
+            if(amount==0)return;
+        }
+        *lo+=amount;*hi+=amount;*pivot+=amount;
+    }
     else if(tool=='e')*angle+=amount;
-    else if(tool=='r')*hi=std::max(*lo+1.0/16.0,*hi+amount);
+    else if(tool=='r'){
+        const double requested=std::max(*lo+1.0/16.0,*hi+amount);
+        *hi=project_.kind==ProjectKind::JavaBlock ? std::min(3.0,requested):requested;
+    }
     dirty_=true;refreshScene();refreshInspector();updateTitle();
 }
 void MainWindow::editCell(int x,int y,int z,const QString& role){
@@ -1051,17 +1098,118 @@ static bool sizeDialog(QWidget* parent,const QString& title,QString& name,Dimens
     for(int i=0;i<3;i++)size[i]=axes[i]->value();
     return true;
 }
-void MainWindow::createNew(){
+static QString bundledSample(const QString& relative);
+void MainWindow::setupStartPage(){
+    editorSurface_=takeCentralWidget();
+    centralStack_=new QStackedWidget(this);
+    centralStack_->setObjectName("StudioPageStack");
+    startPage_=new StartPage(centralStack_);
+    centralStack_->addWidget(startPage_);
+    centralStack_->addWidget(editorSurface_);
+    setCentralWidget(centralStack_);
+    connect(startPage_,&StartPage::createJavaBlockRequested,this,&MainWindow::createJavaBlock);
+    connect(startPage_,&StartPage::createMultiblockRequested,this,&MainWindow::createMultiblock);
+    connect(startPage_,&StartPage::openProjectRequested,this,&MainWindow::openDialog);
+    connect(startPage_,&StartPage::exampleRequested,this,&MainWindow::openExample);
+    connect(startPage_,&StartPage::recentProjectRequested,this,[this](const QString& path){
+        if(!maybeSave())return;
+        openPath(path);
+    });
+    loadRecentProjects();
+}
+void MainWindow::loadRecentProjects(){
+    QSettings prefs;
+    recentProjects_=prefs.value("files/recentProjects").toStringList();
+    if(startPage_)startPage_->setRecentProjects(recentProjects_);
+}
+void MainWindow::rememberRecentProject(const QString& path){
+    const QString absolute=QFileInfo(path).absoluteFilePath();
+    recentProjects_.removeAll(absolute);
+    recentProjects_.prepend(absolute);
+    while(recentProjects_.size()>8)recentProjects_.removeLast();
+    QSettings prefs;prefs.setValue("files/recentProjects",recentProjects_);
+    if(startPage_)startPage_->setRecentProjects(recentProjects_);
+}
+void MainWindow::openHome(){
+    if(atHome_)return;
+    if(!maybeSave())return;
+    hasDocument_=false;atHome_=true;dirty_=false;
+    if(startPage_)startPage_->setRecentProjects(recentProjects_);
+    if(centralStack_)centralStack_->setCurrentWidget(startPage_);
+    for(auto* dock:findChildren<QDockWidget*>())dock->hide();
+    for(auto* bar:findChildren<QToolBar*>())bar->hide();
+    setWindowTitle("Magneticraft2 Studio — Home");
+    statusBar()->showMessage("Choose a project type, open an example, or continue a saved project");
+}
+void MainWindow::activateEditor(){
+    if(!centralStack_)return;
+    atHome_=false;
+    centralStack_->setCurrentWidget(editorSurface_);
+    if(auto* header=findChild<QToolBar*>("StudioHeader"))header->show();
+    if(auto* left=findChild<QDockWidget*>("PartsDock"))left->show();
+    if(auto* right=findChild<QDockWidget*>("PropertiesDock"))right->show();
+    switchWorkspace();
+    if(mode_->currentIndex()==1 && !uvWorkspace_){
+        if(auto* p=findChild<QDockWidget*>("PropertiesDock"))p->raise();
+    }
+}
+void MainWindow::openExample(const QString& key){
+    if(key=="washer"){openOreWasherReference();return;}
+    if(key=="sifter"){
+        if(!maybeSave())return;
+        const QString path=bundledSample("mechanical_sifter_north.json");
+        LoadResult example;QString error;
+        if(path.isEmpty()||!ProjectIO::read(path,example,error)){
+            QMessageBox::warning(this,"Cannot open Sifter example",
+                path.isEmpty()?"The Sifter construction example was not installed.":error);
+            return;
+        }
+        project_=std::move(example.project);
+        project_.name="Mechanical Sifter — Construction";
+        project_.notes="This example contains the real Magneticraft2 Sifter construction layout. "
+                       "Its formed model has not been imported yet.";
+        loadedJson_=example.original;filename_.clear();dirty_=true;hasDocument_=true;
+        undo_.clear();redo_.clear();selected_=-1;layer_=0;uvWorkspace_=false;
+        mode_->setCurrentIndex(0);activateEditor();refreshAll();viewport_->resetCamera();return;
+    }
+    if(key=="workshop"||key=="casing"){
+        if(!maybeSave())return;
+        project_=key=="workshop"?makeDemo():makeJavaBlockProject("Copper Casing — Example");
+        project_.notes=key=="workshop" ? "Simple tutorial machine, not the actual Ore Washer."
+                                           : "Java block example in the 3x3x3 model envelope.";
+        loadedJson_={};filename_.clear();dirty_=true;hasDocument_=true;
+        undo_.clear();redo_.clear();layer_=0;uvWorkspace_=false;
+        selected_=key=="casing"?0:-1;
+        mode_->setCurrentIndex(1);activateEditor();refreshAll();viewport_->resetCamera();return;
+    }
+}
+void MainWindow::createNew(){ openHome(); }
+void MainWindow::createJavaBlock(){
+    if(!maybeSave())return;
+    uvImageKey_.clear();viewport_->invalidateTextures();
+    project_=makeJavaBlockProject("New Java Block");
+    dirty_=false;hasDocument_=true;filename_.clear();loadedJson_={};
+    selected_=0;undo_.clear();redo_.clear();layer_=0;uvWorkspace_=false;
+    mode_->setCurrentIndex(1);
+    activateEditor();refreshAll();viewport_->resetCamera();
+}
+void MainWindow::createMultiblock(){
     if(!maybeSave())return;
     QString name="New Multiblock";Dimensions dims{7,5,9};
-    if(!sizeDialog(this,"New Multiblock",name,dims,true))return;
+    if(!sizeDialog(this,"Create Multiblock",name,dims,true))return;
     uvImageKey_.clear();viewport_->invalidateTextures();
     project_=makeProject(name.toStdString(),dims);
+    dirty_=false;hasDocument_=true;filename_.clear();loadedJson_={};selected_=-1;
+    undo_.clear();redo_.clear();layer_=0;uvWorkspace_=false;
     mode_->setCurrentIndex(0);
-    dirty_=false;filename_.clear();loadedJson_={};selected_=-1;undo_.clear();redo_.clear();layer_=0;
-    refreshAll();viewport_->resetCamera();
+    activateEditor();refreshAll();viewport_->resetCamera();
 }
 void MainWindow::resizeDocument(){
+    if(project_.kind==ProjectKind::JavaBlock){
+        QMessageBox::information(this,"Fixed Java model size",
+            "Java block models use a fixed 3 × 3 × 3 modeling envelope (−16..32 pixels). "
+            "Use a Multiblock project for larger machines.");return;
+    }
     QString name=q(project_.name);Dimensions dims=project_.dimensions;
     if(!sizeDialog(this,"Resize Multiblock",name,dims,false))return;
     snapshot();studio::resize(project_,dims);selected_=-1;commitChanged();viewport_->resetCamera();
@@ -1134,9 +1282,10 @@ bool MainWindow::openOreWasherReference(){
                   "rotor, input pulley and animation are not automatically assembled.";
     uvImageKey_.clear();viewport_->invalidateTextures();
     project_=std::move(example);loadedJson_=structureResult.original;
+    hasDocument_=true;
     filename_.clear();dirty_=true;undo_.clear();redo_.clear();selected_=-1;layer_=0;
     uvWorkspace_=false;mode_->setCurrentIndex(1);
-    refreshAll();viewport_->resetCamera();
+    activateEditor();refreshAll();viewport_->resetCamera();
     qInfo("Studio: Ore Washer model imported with %lld editable cuboids",static_cast<long long>(result.parts.size()));
     statusBar()->showMessage(QString("Ore Washer static model imported: %1 editable cuboids; PNG references still need textures")
             .arg(result.parts.size()),9000);
@@ -1155,9 +1304,11 @@ void MainWindow::openPath(const QString& path){
     }
     uvImageKey_.clear();viewport_->invalidateTextures();
     project_=std::move(result.project);loadedJson_=std::move(result.original);
+    hasDocument_=true;
     mode_->setCurrentIndex(project_.parts.empty()?0:1);
     selected_=-1;layer_=0;filename_=result.fromLegacy ? QString() : path;dirty_=false;undo_.clear();redo_.clear();
-    refreshAll();viewport_->resetCamera();
+    activateEditor();refreshAll();viewport_->resetCamera();
+    if(!result.fromLegacy)rememberRecentProject(path);
 }
 void MainWindow::save(){
     if(filename_.isEmpty()){saveAs();return;}
@@ -1176,19 +1327,30 @@ bool MainWindow::saveTo(const QString& path){
         QMessageBox::warning(this,"Could not save project",error);return false;
     }
     loadedJson_=ProjectIO::encode(project_,loadedJson_);
-    filename_=path;dirty_=false;updateTitle();
+    filename_=path;dirty_=false;hasDocument_=true;
+    rememberRecentProject(path);updateTitle();
     statusBar()->showMessage("Saved "+path,4000);return true;
 }
 bool MainWindow::maybeSave(){
-    if(!dirty_)return true;
+    if(!hasDocument_||!dirty_)return true;
     const auto answer=QMessageBox::question(this,"Unsaved changes",
-        "Save changes to this multiblock before continuing?",
+        "Save changes to this project before continuing?",
         QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel,QMessageBox::Save);
     if(answer==QMessageBox::Cancel)return false;
     if(answer==QMessageBox::Discard)return true;
     save();return !dirty_;
 }
 void MainWindow::exportDialog(){
+    if(project_.kind==ProjectKind::JavaBlock){
+        const QString filename=QFileDialog::getSaveFileName(this,"Export Java block model",
+            q(project_.id)+".json","Minecraft Java model (*.json)");
+        if(filename.isEmpty())return;
+        QString error;
+        if(!ProjectIO::exportJavaBlockModel(filename,project_,error))
+            QMessageBox::warning(this,"Java block export failed",error);
+        else statusBar()->showMessage("Java block model exported: "+filename,5000);
+        return;
+    }
     QString directory=QFileDialog::getExistingDirectory(this,"Choose Forge export directory");
     if(directory.isEmpty())return;
     QString error;

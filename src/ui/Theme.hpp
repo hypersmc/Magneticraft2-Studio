@@ -55,5 +55,28 @@ QCheckBox { color: #b5c5d0; spacing: 6px; }
 QScrollBar:vertical { background: #15202a; width: 9px; }
 QScrollBar::handle:vertical { background: #41525e; min-height: 24px; border-radius: 4px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+
+/* Landing page is intentionally an application surface, not a startup dialog. */
+QWidget#StartPage, QWidget#StartSurface, QScrollArea#StartScrollArea { background: #111a24; }
+QLabel#StartEyebrow { color: #e0a16d; font-size: 11pt; font-weight: 850; letter-spacing: 2px; }
+QLabel#StartHeroTitle { color: #f0f4f5; font-size: 28pt; font-weight: 850; }
+QLabel#StartHeroSubtitle { color: #a2b5c1; font-size: 11pt; }
+QLabel#StartSectionTitle { color: #b3c5ce; font-size: 10pt; font-weight: 800; letter-spacing: 1.5px; padding-top: 4px; }
+QFrame#StartCard { background: #1b2a35; border: 1px solid #344756; border-radius: 12px; }
+QFrame#StartCard:hover { border-color: #bd845b; background: #20303b; }
+QLabel#StartCardGlyph { color: #e1ac78; font-size: 23pt; font-weight: 700; }
+QLabel#StartBadge { color: #a4c1d1; font-size: 8pt; font-weight: 800; letter-spacing: 0.8px; }
+QLabel#StartCardTitle { color: #f6f3ef; font-size: 16pt; font-weight: 800; }
+QLabel#StartCardDescription { color: #b3c2cb; font-size: 10pt; }
+QPushButton[primaryStartAction="true"] { background: #e2a46c; color: #23180f; border-color: #ecb584; font-weight: 800; }
+QPushButton[primaryStartAction="true"]:hover { background: #f5be8c; }
+QFrame#StartExampleCard { background: #18232d; border: 1px solid #2e404b; border-radius: 10px; }
+QFrame#StartExampleCard:hover { border-color: #678095; }
+QLabel#StartExampleTag { color: #d0a581; font-size: 8pt; font-weight: 800; letter-spacing: 0.8px; }
+QLabel#StartExampleTitle { color: #e6eef3; font-size: 12pt; font-weight: 780; }
+QLabel#StartExampleDescription { color: #99adb9; font-size: 9pt; }
+QListWidget#RecentProjectsList { background: #192530; border: 1px solid #324551; border-radius: 9px; padding: 6px; color: #c9d7df; }
+QListWidget#RecentProjectsList::item { padding: 11px 14px; }
+QListWidget#RecentProjectsList::item:selected { background: #4a392e; color: white; }
 )QSS";
 }

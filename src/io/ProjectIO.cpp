@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QSaveFile>
+#include <QRegularExpression>
 #include <QStringList>
 
 #include <algorithm>
@@ -98,6 +99,7 @@ static QJsonObject defaultSettings() {
 QJsonObject ProjectIO::encode(const Project& p,const QJsonObject& original) {
     QJsonObject result=original;
     result["studioVersion"]=1;result["name"]=q(p.name);result["id"]=q(p.id);
+    result["projectType"]=p.kind==ProjectKind::JavaBlock ? "java_block" : "multiblock";
     result["dimensions"]=array(p.dimensions);
     result["notes"]=q(p.notes);
     result["omittedAirInSource"]=p.omittedAirInSource;
@@ -177,7 +179,12 @@ bool ProjectIO::decode(const QByteArray& bytes,LoadResult& out,QString& error) {
             out.fromLegacy=true;return true;
         }
         Project p;
+        const QString type=root.value("projectType").toString("multiblock");
+        if(type=="java_block")p.kind=ProjectKind::JavaBlock;
+        else if(type!="multiblock")throw std::invalid_argument("Unknown Studio project type");
         p.dimensions=dimsFrom(root.value("dimensions"));
+        if(p.kind==ProjectKind::JavaBlock && p.dimensions!=Dimensions{3,3,3})
+            throw std::invalid_argument("A Java block project must have a 3 x 3 x 3 envelope");
         p.name=s(root.value("name"));if(p.name.empty())p.name="Untitled Multiblock";
         p.id=slugify(s(root.value("id")).empty()?p.name:s(root.value("id")));
         p.notes=s(root.value("notes"));p.omittedAirInSource=root.value("omittedAirInSource").toBool(false);
@@ -203,6 +210,8 @@ bool ProjectIO::decode(const QByteArray& bytes,LoadResult& out,QString& error) {
             p.textures[it.key().toStdString()]=encoded.toStdString();
         }
         const auto cells=root.value("cells").toObject();
+        if(p.kind==ProjectKind::JavaBlock&&!cells.isEmpty())
+            throw std::invalid_argument("A Java block project cannot contain multiblock construction cells");
         for(auto it=cells.begin();it!=cells.end();++it) {
             Cell c;
             if(!parseCell(it.key().toStdString(),c)||!contains(p.dimensions,c))
@@ -214,6 +223,8 @@ bool ProjectIO::decode(const QByteArray& bytes,LoadResult& out,QString& error) {
         for(const auto& element:parts) {
             if(!element.isObject())throw std::invalid_argument("Model part is not an object");
             auto b=readPart(element.toObject());
+            if(!partBoundsAllowed(p,b.bounds))
+                throw std::invalid_argument("Java block element exceeds the 3 x 3 x 3 modeling envelope");
             if(b.id.empty())b.id=nextPartId(p);
             p.parts.push_back(b);
         }
@@ -235,10 +246,97 @@ static bool writeJson(const QString& filename,const QJsonObject& data,QString& e
     return true;
 }
 bool ProjectIO::write(const QString& filename,const Project& p,const QJsonObject& original,QString& error) {
+    if(p.kind==ProjectKind::JavaBlock) {
+        if(p.dimensions!=Dimensions{3,3,3}) {error="Java block project must have fixed 3 x 3 x 3 dimensions";return false;}
+        for(const auto& part:p.parts)if(!javaBlockBoundsAllowed(part.bounds)) {
+            error="Element '"+q(part.name)+"' exceeds Java model bounds (−16..32 pixels)";return false;
+        }
+    }
     return writeJson(filename,encode(p,original),error);
 }
 
+bool ProjectIO::exportJavaBlockModel(const QString& path,const Project& p,QString& error) {
+    if(p.kind!=ProjectKind::JavaBlock){error="This project is a multiblock, not a Java block model";return false;}
+    if(p.dimensions!=Dimensions{3,3,3}){error="Java block models require a 3 x 3 x 3 editing envelope";return false;}
+    QJsonArray elements;
+    QJsonObject textures;
+    std::map<std::string,QString> textureAliases;
+    QString particle;
+    const QStringList faceNames={"south","north","west","east","up","down"};
+    const auto aliasFor=[&](const std::string& id,QString& problem)->QString {
+        const QString path=q(id);
+        if(!QRegularExpression("^[a-z0-9_.-]+:[a-z0-9_./-]+$").match(path).hasMatch()) {
+            problem="Invalid texture resource location: "+path;
+            return {};
+        }
+        const auto it=textureAliases.find(id);
+        if(it!=textureAliases.end())return it->second;
+        const QString key="tex"+QString::number(textureAliases.size());
+        textureAliases[id]=key;textures[key]=path;
+        if(particle.isEmpty())particle=path;
+        return key;
+    };
+    for(const Part& part:p.parts){
+        if(!part.visible)continue;
+        if(!javaBlockBoundsAllowed(part.bounds)){
+            error="Element '"+q(part.name)+"' is outside Java block model coordinates -16..32";return false;
+        }
+        if(!part.motionId.empty()){
+            error="Animated part '"+q(part.name)+"' cannot be exported as a static Java block model";return false;
+        }
+        QJsonObject faces;
+        const QString fallback=(part.material=="copper"?"minecraft:block/copper_block":
+            part.material=="iron"?"minecraft:block/iron_block":
+            part.material=="stone"?"minecraft:block/stone":"minecraft:block/oak_planks");
+        for(int face=0;face<6;face++){
+            const FaceUV& settings=part.faces[std::size_t(face)];
+            const std::string tex=settings.texture.empty() ?
+                 (part.texture.empty()?fallback.toStdString():part.texture) : settings.texture;
+            const QString key=aliasFor(tex,error);
+            if(key.isEmpty())return false;
+            const auto uv=effectiveUV(part,face);
+            // A single Java block face has a 0..16 UV rectangle. Repeat/multi-tile
+            // UV is not silently clamped or stretched; prompt for manual mapping.
+            for(double value:uv)if(!std::isfinite(value)||value<0||value>1){
+                error="Element '"+q(part.name)+"' has UVs outside one 16x16 tile. "
+                      "Use manual per-face UV mapping before Java export.";return false;
+            }
+            QJsonArray uvArray;
+            for(double value:uv)uvArray.append(value*16.0);
+            QJsonObject faceJson{{"texture","#"+key},{"uv",uvArray}};
+            if(settings.quarterTurns%4!=0)faceJson["rotation"]=((settings.quarterTurns%4)+4)%4*90;
+            faces[faceNames[face]]=faceJson;
+        }
+        auto coords=[](Vec3 p)->QJsonArray{
+            return QJsonArray{(p.x-1.0)*16.0,(p.y-1.0)*16.0,(p.z-1.0)*16.0};
+        };
+        QJsonObject element{{"from",coords(part.bounds.from)},
+                            {"to",coords(part.bounds.to)},{"faces",faces}};
+        const Vec3 rotation=part.rotationDegrees;
+        const std::array<double,3> angles{rotation.x,rotation.y,rotation.z};
+        int axis=-1;
+        for(int i=0;i<3;i++){
+            if(std::abs(angles[std::size_t(i)])<0.00001)continue;
+            if(axis!=-1){error="Java element '"+q(part.name)+"' cannot rotate on multiple axes";return false;}
+            axis=i;
+        }
+        if(axis>=0){
+            const double angle=angles[std::size_t(axis)];
+            if(std::abs(std::abs(angle)-22.5)>0.00001 && std::abs(std::abs(angle)-45.0)>0.00001){
+                error="Java element '"+q(part.name)+"' supports only 22.5 or 45 degree rotations";return false;
+            }
+            element["rotation"]=QJsonObject{{"origin",coords(part.pivot)},
+                {"axis",QString(axis==0?"x":axis==1?"y":"z")},{"angle",angle},{"rescale",false}};
+        }
+        elements.append(element);
+    }
+    if(!particle.isEmpty())textures["particle"]=particle;
+    QJsonObject model{{"parent","minecraft:block/block"},{"textures",textures},{"elements",elements}};
+    return writeJson(path,model,error);
+}
+
 bool ProjectIO::exportForgeDirectory(const QString& root,const Project& p,const QJsonObject& original,QString& error) {
+    if(p.kind==ProjectKind::JavaBlock){error="Use Export Java Block Model for a Java block project";return false;}
     const auto [w,h,d]=p.dimensions;
     if(std::size_t(w)*std::size_t(h)*std::size_t(d)>150000) {
         error="Dense legacy construction JSON export is limited to 150,000 block cells";return false;

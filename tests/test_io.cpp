@@ -55,6 +55,26 @@ int main(int argc,char**argv) {
     assert(generated.open(QIODevice::ReadOnly));
     QJsonDocument json=QJsonDocument::fromJson(generated.readAll());
     assert(json.object().value("structure").toObject().value("dimensions").toArray().size()==3);
+    // A Java block is a distinct document type with its own export path.
+    Project block=makeJavaBlockProject("Copper Casing");
+    const auto doc=ProjectIO::encode(block);
+    assert(doc.value("projectType").toString()=="java_block");
+    assert(ProjectIO::decode(QJsonDocument(doc).toJson(),result,err));
+    assert(result.project.kind==ProjectKind::JavaBlock);
+    assert((result.project.dimensions==Dimensions{3,3,3}));
+    const QString modelFile=temp.filePath("copper_casing.json");
+    assert(ProjectIO::exportJavaBlockModel(modelFile,block,err));
+    QFile blockExport(modelFile);assert(blockExport.open(QIODevice::ReadOnly));
+    const auto exported=QJsonDocument::fromJson(blockExport.readAll()).object();
+    assert(exported.value("elements").toArray().size()==1);
+    const auto box=exported.value("elements").toArray().at(0).toObject();
+    assert(box.value("from").toArray().at(0).toInt()==0);
+    assert(box.value("to").toArray().at(0).toInt()==16);
+    assert(box.value("faces").toObject().size()==6);
+    assert(!ProjectIO::exportForgeDirectory(temp.filePath("wrong"),block,{},err));
+    block.parts.front().bounds.to.x=3.0625;
+    assert(!ProjectIO::exportJavaBlockModel(modelFile,block,err));
+    assert(!ProjectIO::write(temp.filePath("invalid.json"),block,{},err));
     std::cout<<"Native Qt JSON IO tests passed\n";
     return 0;
 }

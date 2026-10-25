@@ -28,6 +28,7 @@ if(NOT STUDIO_HEADLESS_ONLY)
         src/io/ProjectIO.hpp src/io/ProjectIO.cpp
         src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
         src/ui/MainWindow.hpp src/ui/MainWindow.cpp
+        src/ui/StartPage.hpp src/ui/StartPage.cpp
         src/ui/Viewport.hpp src/ui/Viewport.cpp
         src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
         src/ui/UvEditor.hpp src/ui/UvEditor.cpp
@@ -71,6 +72,7 @@ if(STUDIO_BUILD_TESTS)
         add_test(NAME studio-import-tests COMMAND studio-import-tests)
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
+            src/ui/StartPage.hpp src/ui/StartPage.cpp
             src/ui/Viewport.hpp src/ui/Viewport.cpp
             src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
             src/ui/UvEditor.hpp src/ui/UvEditor.cpp

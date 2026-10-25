@@ -45,17 +45,30 @@ int main(int argc,char** argv) {
     app.setStyleSheet(studio::editorStyle);
     studio::MainWindow window;
     bool smoke=false;
+    bool homeSmoke=false;
+    bool openedProject=false;
     QString screenshot;
     bool sampleWasher=false;
     for(int i=1;i<argc;i++){
         const QString argument=QString::fromLocal8Bit(argv[i]);
         if(argument=="--smoke")smoke=true;
+        else if(argument=="--home-smoke")homeSmoke=true;
         else if(argument=="--sample-washer")sampleWasher=true;
         else if(argument=="--screenshot" && i+1<argc)screenshot=QString::fromLocal8Bit(argv[++i]);
-        else if(QFileInfo::exists(argument))window.openPath(argument);
+        else if(QFileInfo::exists(argument)){window.openPath(argument);openedProject=true;}
     }
     if(sampleWasher && !window.openOreWasherReference())return 7;
+    else if(smoke && !sampleWasher && !openedProject)window.openExample("workshop");
     window.show();
+    if(homeSmoke){
+        QTimer::singleShot(700,&app,[&](){
+            if(!window.isAtHome()){qCritical("Studio did not open at the Start page");app.exit(6);return;}
+            if(!screenshot.isEmpty() && !window.grab().save(screenshot)){
+                qCritical("Failed to capture the Start page");app.exit(5);return;
+            }
+            app.exit(0);
+        });
+    }
     if(smoke) {
         QTimer::singleShot(1600,&app,[&](){
             const auto* viewport=window.findChild<studio::Viewport*>();

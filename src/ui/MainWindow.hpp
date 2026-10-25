@@ -21,11 +21,13 @@ class QLabel;
 class QPushButton;
 class QToolButton;
 class QVBoxLayout;
+class QStackedWidget;
 
 namespace studio {
 class LayerCanvas;
 class Viewport;
 class UvEditor;
+class StartPage;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -33,6 +35,10 @@ public:
     explicit MainWindow(QWidget* parent=nullptr);
     void openPath(const QString& path);
     bool openOreWasherReference(); // Load bundled actual ore washer geometry for editor evaluation.
+    void openExample(const QString& exampleId);
+    void openHome();
+    bool isAtHome() const { return atHome_; }
+    ProjectKind projectKind() const { return project_.kind; }
 protected:
     void closeEvent(QCloseEvent* event) override;
 private:
@@ -56,6 +62,12 @@ private:
     void updateTitle();
     void snapshot();
     void createNew();
+    void createJavaBlock();
+    void createMultiblock();
+    void setupStartPage();
+    void activateEditor();
+    void rememberRecentProject(const QString& path);
+    void loadRecentProjects();
     void save();
     void saveAs();
     bool saveTo(const QString& path);
@@ -82,6 +94,12 @@ private:
     void renameSelected();
     void addPrimitive(const QString& kind);
 
+    QStackedWidget* centralStack_=nullptr;
+    QWidget* editorSurface_=nullptr;
+    StartPage* startPage_=nullptr;
+    bool atHome_=false;
+    bool hasDocument_=false;
+    QStringList recentProjects_;
     Project project_;
     QJsonObject loadedJson_;
     QString filename_;

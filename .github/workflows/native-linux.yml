@@ -19,6 +19,8 @@ jobs:
         run: cmake --build build --parallel 2
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
+      - name: Native start page smoke test
+        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --home-smoke --screenshot build/studio-home.png
       - name: Native GUI startup smoke test (software OpenGL)
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --smoke --screenshot build/studio-native.png
       - name: Native Model workspace drawing interaction test
@@ -34,6 +36,7 @@ jobs:
         with:
           name: magneticraft2-studio-native-preview
           path: |
+            build/studio-home.png
             build/studio-native.png
             build/studio-model-draw.png
             build/studio-editor-ux.png

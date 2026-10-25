@@ -20,6 +20,9 @@ public:
     static bool write(const QString& filename, const Project& p, const QJsonObject& original, QString& error);
     // Exports construction JSON and a preview-only sliced model manifest. Forge
     // tile rendering must be implemented separately in Magneticraft2.
+    // Standalone vanilla Java block-model JSON. A 3x3x3 authoring envelope
+    // maps to element coordinates -16..32 in Minecraft model pixels.
+    static bool exportJavaBlockModel(const QString& path, const Project& p, QString& error);
     static bool exportForgeDirectory(const QString& root, const Project& p, const QJsonObject& original, QString& error);
 };
 
