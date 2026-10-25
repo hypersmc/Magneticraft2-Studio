@@ -68,7 +68,10 @@ int main(int argc,char** argv) {
                 app.exit(5);return;
             }
             qInfo("Native Qt 6 / OpenGL 3.3 startup smoke test passed");
-            app.quit();
+            // The imported reference is intentionally an unsaved document.
+            // QApplication::quit() can invoke the normal save-confirmation
+            // workflow; smoke verification must exit without opening dialogs.
+            app.exit(0);
         });
     }
     const int code=app.exec();
