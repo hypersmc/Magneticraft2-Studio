@@ -206,9 +206,9 @@ TextureAssetReport importTextureAssets(Project& project,const QString& sourcePat
         }else{
             QString name=root.filePath(relative);
             // Also accept selecting the assets/ folder instead of its parent.
-            if(!QFileInfo::isFile(name))name=root.filePath(relative.mid(7));
+            if(!QFileInfo(name).isFile())name=root.filePath(relative.mid(7));
             // An unpacked resource pack may be nested one level below a launcher root.
-            if(QFileInfo::isFile(name)){
+            if(QFileInfo(name).isFile()){
                 const QFileInfo fileInfo(name);
                 if(fileInfo.size()>kMaxPngBytes)warning="PNG exceeds the 8 MiB resource limit";
                 else {
