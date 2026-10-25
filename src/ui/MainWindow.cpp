@@ -166,26 +166,26 @@ void MainWindow::createInspector(){
 }
 void MainWindow::createMenus(){
     auto* file=menuBar()->addMenu("&File");
-    auto* newAction=file->addAction("New multiblock",this,&MainWindow::createNew,QKeySequence::New);
+    auto* newAction=file->addAction("New multiblock",QKeySequence::New,this,&MainWindow::createNew);
     Q_UNUSED(newAction);
-    file->addAction("Open project / legacy JSON...",this,&MainWindow::openDialog,QKeySequence::Open);
-    file->addAction("Save project",this,&MainWindow::save,QKeySequence::Save);
-    file->addAction("Save as...",this,&MainWindow::saveAs,QKeySequence::SaveAs);
+    file->addAction("Open project / legacy JSON...",QKeySequence::Open,this,&MainWindow::openDialog);
+    file->addAction("Save project",QKeySequence::Save,this,&MainWindow::save);
+    file->addAction("Save as...",QKeySequence::SaveAs,this,&MainWindow::saveAs);
     file->addSeparator();
     file->addAction("Export Forge construction JSONs...",this,&MainWindow::exportDialog);
-    file->addSeparator();file->addAction("Quit",this,&QWidget::close,QKeySequence::Quit);
+    file->addSeparator();file->addAction("Quit",QKeySequence::Quit,this,&QWidget::close);
 
     auto* edit=menuBar()->addMenu("&Edit");
-    undoAction_=edit->addAction("Undo",this,&MainWindow::undo,QKeySequence::Undo);
-    redoAction_=edit->addAction("Redo",this,&MainWindow::redo,QKeySequence::Redo);
+    undoAction_=edit->addAction("Undo",QKeySequence::Undo,this,&MainWindow::undo);
+    redoAction_=edit->addAction("Redo",QKeySequence::Redo,this,&MainWindow::redo);
     edit->addSeparator();
-    edit->addAction("Add cuboid",this,&MainWindow::addPart,QKeySequence("Ctrl+Shift+N"));
-    edit->addAction("Duplicate selected",this,&MainWindow::duplicatePart,QKeySequence("Ctrl+D"));
-    edit->addAction("Delete selected",this,&MainWindow::removePart,QKeySequence::Delete);
+    edit->addAction("Add cuboid",QKeySequence("Ctrl+Shift+N"),this,&MainWindow::addPart);
+    edit->addAction("Duplicate selected",QKeySequence("Ctrl+D"),this,&MainWindow::duplicatePart);
+    edit->addAction("Delete selected",QKeySequence::Delete,this,&MainWindow::removePart);
     edit->addAction("Resize structure...",this,&MainWindow::resizeDocument);
 
     auto* view=menuBar()->addMenu("&View");
-    view->addAction("Fit entire structure",viewport_,&Viewport::resetCamera,QKeySequence("F"));
+    view->addAction("Fit entire structure",QKeySequence("F"),viewport_,&Viewport::resetCamera);
     auto* help=menuBar()->addMenu("&Help");
     help->addAction("About Magneticraft2 Studio",this,[this](){
         QMessageBox::about(this,"Magneticraft2 Studio", "<b>Magneticraft2 Studio — Native Linux milestone</b><br>"
@@ -436,7 +436,7 @@ void MainWindow::createNew(){
 void MainWindow::resizeDocument(){
     QString name=q(project_.name);Dimensions dims=project_.dimensions;
     if(!sizeDialog(this,"Resize Multiblock",name,dims,false))return;
-    snapshot();resize(project_,dims);selected_=-1;commitChanged();viewport_->resetCamera();
+    snapshot();studio::resize(project_,dims);selected_=-1;commitChanged();viewport_->resetCamera();
 }
 void MainWindow::openDialog(){
     if(!maybeSave())return;
