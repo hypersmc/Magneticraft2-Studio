@@ -1,0 +1,21 @@
+name: Native Linux Build
+on:
+  push:
+    branches: [native-linux, main]
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt 6 and C++ dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ qt6-base-dev libqt6opengl6-dev
+      - name: Configure (native GUI)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - name: Build all
+        run: cmake --build build --parallel 2
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure

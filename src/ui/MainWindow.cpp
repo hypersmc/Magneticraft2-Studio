@@ -1,0 +1,504 @@
+#include "MainWindow.hpp"
+#include "LayerCanvas.hpp"
+#include "Viewport.hpp"
+#include "io/ProjectIO.hpp"
+
+#include <QAction>
+#include <QApplication>
+#include <QCheckBox>
+#include <QCloseEvent>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDockWidget>
+#include <QDoubleSpinBox>
+#include <QFileDialog>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
+#include <QMenuBar>
+#include <QMessageBox>
+#include <QScrollArea>
+#include <QSettings>
+#include <QSpinBox>
+#include <QSplitter>
+#include <QStatusBar>
+#include <QToolBar>
+#include <QTreeWidget>
+#include <QVBoxLayout>
+#include <QWidget>
+#include <QSignalBlocker>
+#include <QShortcut>
+#include <QColor>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QKeySequence>
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
+namespace studio {
+
+static QString q(const std::string& value) {return QString::fromStdString(value);}
+static QDoubleSpinBox* coordinateSpin(QWidget* parent) {
+    auto* box=new QDoubleSpinBox(parent);
+    box->setRange(-100000.0,100000.0);box->setDecimals(4);
+    box->setSingleStep(1.0/16.0);
+    box->setKeyboardTracking(false);
+    return box;
+}
+MainWindow::MainWindow(QWidget* parent):QMainWindow(parent),project_(makeDemo()) {
+    buildUI();
+    createMenus();
+    QSettings pref;
+    const QByteArray geometry=pref.value("window/geometry").toByteArray();
+    if(!geometry.isEmpty())restoreGeometry(geometry);
+    else resize(1420,900);
+    const QByteArray state=pref.value("window/state").toByteArray();
+    if(!state.isEmpty())restoreState(state);
+    refreshAll();viewport_->resetCamera();
+}
+void MainWindow::buildUI(){
+    setObjectName("MainWindow");
+    setDockOptions(QMainWindow::AllowNestedDocks|QMainWindow::AllowTabbedDocks|QMainWindow::AnimatedDocks);
+    viewport_=new Viewport(this);
+    layers_=new LayerCanvas(this);
+    auto* splitter=new QSplitter(Qt::Vertical,this);
+    splitter->setChildrenCollapsible(false);
+    splitter->addWidget(viewport_);
+    QWidget* layerContainer=new QWidget(this);
+    auto* layerLayout=new QVBoxLayout(layerContainer);
+    layerLayout->setContentsMargins(0,0,0,0);
+    auto* layerToolbar=new QWidget(this);
+    auto* layerRow=new QHBoxLayout(layerToolbar);layerRow->setContentsMargins(12,4,12,4);
+    layerRow->addWidget(new QLabel("CONSTRUCTION LAYER",this));
+    layerSpinner_=new QSpinBox(this);layerSpinner_->setRange(0,project_.dimensions[1]-1);
+    layerSpinner_->setMaximumWidth(85);layerRow->addWidget(layerSpinner_);
+    layerRow->addStretch(1);
+    layerRow->addWidget(new QLabel("BRUSH",this));
+    role_=new QComboBox(this);role_->setMinimumWidth(160);layerRow->addWidget(role_);
+    layerLayout->addWidget(layerToolbar);
+    layerLayout->addWidget(layers_,1);
+    splitter->addWidget(layerContainer);splitter->setStretchFactor(0,3);splitter->setStretchFactor(1,1);
+    setCentralWidget(splitter);
+
+    auto* objects=new QDockWidget("OUTLINER  /  MODEL PARTS",this);
+    objects->setObjectName("PartsDock");
+    tree_=new QTreeWidget(this);
+    tree_->setHeaderHidden(true);
+    tree_->setSelectionMode(QAbstractItemView::SingleSelection);
+    objects->setWidget(tree_);addDockWidget(Qt::LeftDockWidgetArea,objects);
+    objects->setMinimumWidth(220);
+    auto* inspector=new QDockWidget("PROPERTIES",this);
+    inspector->setObjectName("PropertiesDock");
+    QWidget* container=new QWidget(this);
+    auto* scroller=new QScrollArea(this);
+    scroller->setWidgetResizable(true);scroller->setFrameShape(QFrame::NoFrame);
+    scroller->setWidget(container);
+    inspector->setWidget(scroller);addDockWidget(Qt::RightDockWidgetArea,inspector);
+    inspector->setMinimumWidth(250);
+    createInspector();
+    statusBar()->showMessage("Native GPU viewport  |  Mouse orbit: left-drag empty space  |  Pan: middle-drag  |  Zoom: wheel");
+
+    connect(role_,&QComboBox::currentTextChanged,layers_,&LayerCanvas::setRole);
+    connect(layerSpinner_,QOverload<int>::of(&QSpinBox::valueChanged),this,[this](int n){
+        layer_=n;layers_->setLayer(n);refreshScene();
+    });
+    connect(layers_,&LayerCanvas::paintRequested,this,&MainWindow::editCell);
+    connect(tree_,&QTreeWidget::currentItemChanged,this,[this](QTreeWidgetItem* item,QTreeWidgetItem*){
+        if(updating_)return;
+        const int index=item?item->data(0,Qt::UserRole).toInt():-1;
+        setSelected(index);
+    });
+    connect(viewport_,&Viewport::partSelected,this,&MainWindow::setSelected);
+    connect(viewport_,&Viewport::beginEdit,this,[this](){dragChanged_=false;});
+    connect(viewport_,&Viewport::deltaEdit,this,&MainWindow::applyTransformDelta);
+    connect(viewport_,&Viewport::endEdit,this,[this](){dragChanged_=false;});
+}
+void MainWindow::createInspector(){
+    QWidget* contents=static_cast<QScrollArea*>(findChild<QDockWidget*>("PropertiesDock")->widget())->widget();
+    auto* layout=new QVBoxLayout(contents);layout->setContentsMargins(12,12,12,12);layout->setSpacing(14);
+    auto* appearance=new QGroupBox("PART",contents);
+    auto* form=new QFormLayout(appearance);
+    partName_=new QLineEdit(contents);groupName_=new QLineEdit(contents);
+    material_=new QComboBox(contents);
+    material_->addItems({"wood","copper","stone","iron","dark","glass","water"});
+    visible_=new QCheckBox("Show in model",contents);
+    form->addRow("Name",partName_);form->addRow("Group",groupName_);
+    form->addRow("Material",material_);form->addRow("Visibility",visible_);
+    layout->addWidget(appearance);
+    auto* transform=new QGroupBox("TRANSFORM  /  BLOCK UNITS",contents);
+    auto* tf=new QFormLayout(transform);
+    const char* axes[]={"X","Y","Z"};
+    for(int i=0;i<3;i++){
+        from_[i]=coordinateSpin(contents);to_[i]=coordinateSpin(contents);
+        tf->addRow(QString("Min ")+axes[i],from_[i]);tf->addRow(QString("Max ")+axes[i],to_[i]);
+    }
+    for(int i=0;i<3;i++){
+        angle_[i]=coordinateSpin(contents);angle_[i]->setRange(-3600,3600);
+        angle_[i]->setSingleStep(5);tf->addRow(QString("Angle ")+axes[i],angle_[i]);
+    }
+    for(int i=0;i<3;i++){
+        pivot_[i]=coordinateSpin(contents);tf->addRow(QString("Pivot ")+axes[i],pivot_[i]);
+    }
+    layout->addWidget(transform);
+    auto* help=new QLabel("W / E / R: Move, Rotate, Scale\nX / Y / Z: Active axis\n1 unit = 1 Minecraft block\nSnap: 1/16 block",contents);
+    help->setWordWrap(true);help->setObjectName("InspectorHelp");layout->addWidget(help);layout->addStretch();
+    const auto connectEdit=[this](){
+        // Spinboxes use keyboardTracking=false, so user typing a number commits
+        // only once rather than generating hundreds of transient undo states.
+        applyInspector();
+    };
+    connect(partName_,&QLineEdit::editingFinished,this,connectEdit);
+    connect(groupName_,&QLineEdit::editingFinished,this,connectEdit);
+    connect(material_,&QComboBox::currentTextChanged,this,connectEdit);
+    connect(visible_,&QCheckBox::toggled,this,connectEdit);
+    for(int i=0;i<3;i++){
+        connect(from_[i],QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,connectEdit);
+        connect(to_[i],QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,connectEdit);
+        connect(angle_[i],QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,connectEdit);
+        connect(pivot_[i],QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,connectEdit);
+    }
+}
+void MainWindow::createMenus(){
+    auto* file=menuBar()->addMenu("&File");
+    auto* newAction=file->addAction("New multiblock",this,&MainWindow::createNew,QKeySequence::New);
+    Q_UNUSED(newAction);
+    file->addAction("Open project / legacy JSON...",this,&MainWindow::openDialog,QKeySequence::Open);
+    file->addAction("Save project",this,&MainWindow::save,QKeySequence::Save);
+    file->addAction("Save as...",this,&MainWindow::saveAs,QKeySequence::SaveAs);
+    file->addSeparator();
+    file->addAction("Export Forge construction JSONs...",this,&MainWindow::exportDialog);
+    file->addSeparator();file->addAction("Quit",this,&QWidget::close,QKeySequence::Quit);
+
+    auto* edit=menuBar()->addMenu("&Edit");
+    undoAction_=edit->addAction("Undo",this,&MainWindow::undo,QKeySequence::Undo);
+    redoAction_=edit->addAction("Redo",this,&MainWindow::redo,QKeySequence::Redo);
+    edit->addSeparator();
+    edit->addAction("Add cuboid",this,&MainWindow::addPart,QKeySequence("Ctrl+Shift+N"));
+    edit->addAction("Duplicate selected",this,&MainWindow::duplicatePart,QKeySequence("Ctrl+D"));
+    edit->addAction("Delete selected",this,&MainWindow::removePart,QKeySequence::Delete);
+    edit->addAction("Resize structure...",this,&MainWindow::resizeDocument);
+
+    auto* view=menuBar()->addMenu("&View");
+    view->addAction("Fit entire structure",viewport_,&Viewport::resetCamera,QKeySequence("F"));
+    auto* help=menuBar()->addMenu("&Help");
+    help->addAction("About Magneticraft2 Studio",this,[this](){
+        QMessageBox::about(this,"Magneticraft2 Studio", "<b>Magneticraft2 Studio — Native Linux milestone</b><br>"
+            "C++17 + Qt 6 + OpenGL 3.3 Core<br><br>"
+            "Native model editing with layer-based construction and Studio v1 save/load.<br>"
+            "<b>Not yet:</b> textured UV editing, complete animation authoring, or a mod-side tiled model renderer.");
+    });
+
+    auto* toolbar=addToolBar("Modeling");toolbar->setObjectName("ModelToolbar");
+    toolbar->setMovable(false);
+    toolbar->addAction("New",this,&MainWindow::createNew);
+    toolbar->addAction("Open",this,&MainWindow::openDialog);
+    toolbar->addAction("Save",this,&MainWindow::save);
+    toolbar->addSeparator();
+    toolbar->addAction("+ Box",this,&MainWindow::addPart);
+    toolbar->addAction("Duplicate",this,&MainWindow::duplicatePart);
+    toolbar->addAction("Delete",this,&MainWindow::removePart);
+    toolbar->addSeparator();
+    toolbar->addWidget(new QLabel("  WORKSPACE  ",this));
+    mode_=new QComboBox(this);mode_->addItems({"Construction", "Formed Model"});
+    toolbar->addWidget(mode_);
+    ghost_=new QCheckBox("Ghost structure",this);toolbar->addWidget(ghost_);
+    toolbar->addSeparator();
+    toolbar->addWidget(new QLabel("  TOOL  ",this));
+    tool_=new QComboBox(this);tool_->addItem("W · Move",'w');tool_->addItem("E · Rotate",'e');tool_->addItem("R · Scale",'r');
+    toolbar->addWidget(tool_);
+    toolbar->addWidget(new QLabel("   AXIS  ",this));
+    axis_=new QComboBox(this);axis_->addItem("X",'x');axis_->addItem("Y",'y');axis_->addItem("Z",'z');
+    toolbar->addWidget(axis_);
+    toolbar->addSeparator();
+    toolbar->addAction("Fit",viewport_,&Viewport::resetCamera);
+    connect(mode_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){refreshScene();});
+    connect(ghost_,&QCheckBox::toggled,this,[this](bool){refreshScene();});
+    connect(tool_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){viewport_->setTool(char(tool_->currentData().toInt()));});
+    connect(axis_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){viewport_->setAxis(char(axis_->currentData().toInt()));});
+    viewport_->setTool('w');viewport_->setAxis('x');
+    // These shortcuts activate only when the GPU viewport has keyboard focus.
+    for(const auto key : {Qt::Key_W,Qt::Key_E,Qt::Key_R,Qt::Key_X,Qt::Key_Y,Qt::Key_Z}) {
+        auto* shortcut=new QShortcut(QKeySequence(key),viewport_);
+        shortcut->setContext(Qt::WidgetShortcut);
+        connect(shortcut,&QShortcut::activated,this,[this,key](){
+            const char c=char(key);
+            if(c=='W'||c=='E'||c=='R')tool_->setCurrentIndex(c=='W'?0:c=='E'?1:2);
+            else axis_->setCurrentIndex(c=='X'?0:c=='Y'?1:2);
+        });
+    }
+    undoAction_->setEnabled(false);redoAction_->setEnabled(false);
+}
+void MainWindow::refreshRolePalette(){
+    const auto previously=role_->currentText();
+    QSignalBlocker blocker(role_);
+    role_->clear();
+    role_->addItem("Air");
+    for(const auto& [key,value]:project_.palette){Q_UNUSED(value);if(key!="Air")role_->addItem(q(key));}
+    int which=role_->findText(previously);
+    if(which<0)which=std::max(0,role_->findText("Frame"));
+    role_->setCurrentIndex(which);
+    layers_->setRole(role_->currentText());
+}
+void MainWindow::refreshPartTree(){
+    QSignalBlocker blocker(tree_);
+    tree_->clear();
+    for(std::size_t i=0;i<project_.parts.size();i++){
+        const auto& part=project_.parts[i];
+        auto* item=new QTreeWidgetItem(tree_);
+        item->setText(0,q(part.name)+"   ["+q(part.group)+"]");
+        item->setData(0,Qt::UserRole,int(i));
+        if(!part.visible)item->setForeground(0,QColor("#667681"));
+        if(int(i)==selected_)tree_->setCurrentItem(item);
+    }
+}
+void MainWindow::refreshInspector(){
+    updating_=true;
+    const bool enabled=selected_>=0&&selected_<int(project_.parts.size());
+    partName_->setEnabled(enabled);groupName_->setEnabled(enabled);material_->setEnabled(enabled);
+    visible_->setEnabled(enabled);
+    for(int i=0;i<3;i++){
+        from_[i]->setEnabled(enabled);to_[i]->setEnabled(enabled);
+        angle_[i]->setEnabled(enabled);pivot_[i]->setEnabled(enabled);
+    }
+    if(enabled){
+        const auto& part=project_.parts[std::size_t(selected_)];
+        partName_->setText(q(part.name));groupName_->setText(q(part.group));
+        int material=material_->findText(q(part.material));
+        if(material<0){material_->addItem(q(part.material));material=material_->count()-1;}
+        material_->setCurrentIndex(material);visible_->setChecked(part.visible);
+        const double f[]={part.bounds.from.x,part.bounds.from.y,part.bounds.from.z};
+        const double t[]={part.bounds.to.x,part.bounds.to.y,part.bounds.to.z};
+        const double a[]={part.rotationDegrees.x,part.rotationDegrees.y,part.rotationDegrees.z};
+        const double pivot[]={part.pivot.x,part.pivot.y,part.pivot.z};
+        for(int i=0;i<3;i++){from_[i]->setValue(f[i]);to_[i]->setValue(t[i]);angle_[i]->setValue(a[i]);pivot_[i]->setValue(pivot[i]);}
+    }else {
+        partName_->clear();groupName_->clear();visible_->setChecked(false);
+    }
+    updating_=false;
+}
+void MainWindow::refreshScene(){
+    BuildOptions view;
+    const bool formed=mode_ && mode_->currentIndex()==1;
+    view.showConstruction=!formed || (ghost_ && ghost_->isChecked());
+    view.showFormed=formed;
+    view.ghostStructure=formed;
+    view.layer=formed?-1:layer_;
+    view.selectedPart=selected_;
+    viewport_->setScene(project_,view);
+    layers_->setProject(&project_);layers_->setLayer(layer_);
+    statusBar()->showMessage(QString("%1 x %2 x %3 blocks  |  %4 placed cells  |  %5 formed parts  |  Mesh built on worker thread")
+        .arg(project_.dimensions[0]).arg(project_.dimensions[1]).arg(project_.dimensions[2])
+        .arg(project_.cells.size()).arg(project_.parts.size()));
+}
+void MainWindow::updateTitle(){
+    setWindowTitle(QString("%1%2 — Magneticraft2 Studio (Native Linux)")
+        .arg(q(project_.name),dirty_?" *":""));
+    undoAction_->setEnabled(!undo_.empty());redoAction_->setEnabled(!redo_.empty());
+}
+void MainWindow::refreshAll(){
+    layerSpinner_->setRange(0,project_.dimensions[1]-1);
+    layer_=std::min(layer_,project_.dimensions[1]-1);
+    layerSpinner_->setValue(layer_);
+    refreshRolePalette();refreshPartTree();refreshInspector();refreshScene();updateTitle();
+}
+void MainWindow::setSelected(int index){
+    if(index>=int(project_.parts.size())||index<0)index=-1;
+    if(selected_==index)return;
+    selected_=index;
+    if(index>=0 && mode_)mode_->setCurrentIndex(1);
+    refreshPartTree();refreshInspector();refreshScene();
+}
+void MainWindow::snapshot(){
+    undo_.push_back(project_);
+    if(undo_.size()>80)undo_.erase(undo_.begin());
+    redo_.clear();
+}
+void MainWindow::commitChanged(){dirty_=true;refreshAll();}
+void MainWindow::undo(){
+    if(undo_.empty())return;
+    redo_.push_back(project_);project_=std::move(undo_.back());undo_.pop_back();
+    if(selected_>=int(project_.parts.size()))selected_=-1;
+    commitChanged();
+}
+void MainWindow::redo(){
+    if(redo_.empty())return;
+    undo_.push_back(project_);project_=std::move(redo_.back());redo_.pop_back();
+    if(selected_>=int(project_.parts.size()))selected_=-1;
+    commitChanged();
+}
+void MainWindow::addPart(){
+    snapshot();
+    const double x=project_.dimensions[0]*0.5;
+    const double z=project_.dimensions[2]*0.5;
+    auto part=makeBox(project_,{{x-0.5,0.5,z-0.5},{x+0.5,1.5,z+0.5}});
+    project_.parts.push_back(part);selected_=int(project_.parts.size()-1);
+    mode_->setCurrentIndex(1);commitChanged();
+}
+void MainWindow::duplicatePart(){
+    if(selected_<0||selected_>=int(project_.parts.size()))return;
+    snapshot();Part part=project_.parts[std::size_t(selected_)];
+    part.id=nextPartId(project_);part.name+=" Copy";
+    const Vec3 offset{0.25,0,0.25};
+    part.bounds.from=part.bounds.from+offset;part.bounds.to=part.bounds.to+offset;part.pivot=part.pivot+offset;
+    project_.parts.push_back(part);selected_=int(project_.parts.size())-1;
+    mode_->setCurrentIndex(1);commitChanged();
+}
+void MainWindow::removePart(){
+    if(selected_<0||selected_>=int(project_.parts.size()))return;
+    snapshot();project_.parts.erase(project_.parts.begin()+selected_);
+    selected_=-1;commitChanged();
+}
+void MainWindow::applyInspector(){
+    if(updating_||selected_<0||selected_>=int(project_.parts.size()))return;
+    auto part=project_.parts[std::size_t(selected_)];
+    part.name=partName_->text().toStdString();part.group=groupName_->text().toStdString();
+    part.material=material_->currentText().toStdString();part.visible=visible_->isChecked();
+    part.bounds.from={from_[0]->value(),from_[1]->value(),from_[2]->value()};
+    part.bounds.to={to_[0]->value(),to_[1]->value(),to_[2]->value()};
+    part.rotationDegrees={angle_[0]->value(),angle_[1]->value(),angle_[2]->value()};
+    part.pivot={pivot_[0]->value(),pivot_[1]->value(),pivot_[2]->value()};
+    if(!validBounds(part.bounds)){
+        statusBar()->showMessage("Invalid cuboid dimensions: each Min must be smaller than Max",5000);
+        return;
+    }
+    const auto& old=project_.parts[std::size_t(selected_)];
+    if(part.name==old.name && part.group==old.group && part.material==old.material && part.visible==old.visible &&
+       part.bounds.from.x==old.bounds.from.x && part.bounds.from.y==old.bounds.from.y && part.bounds.from.z==old.bounds.from.z &&
+       part.bounds.to.x==old.bounds.to.x && part.bounds.to.y==old.bounds.to.y && part.bounds.to.z==old.bounds.to.z &&
+       part.rotationDegrees.x==old.rotationDegrees.x&&part.rotationDegrees.y==old.rotationDegrees.y&&part.rotationDegrees.z==old.rotationDegrees.z&&
+       part.pivot.x==old.pivot.x&&part.pivot.y==old.pivot.y&&part.pivot.z==old.pivot.z)return;
+    snapshot();project_.parts[std::size_t(selected_)]=std::move(part);
+    commitChanged();
+}
+void MainWindow::applyTransformDelta(double amount,char axis,char tool){
+    if(selected_<0||selected_>=int(project_.parts.size()))return;
+    if(!dragChanged_){snapshot();dragChanged_=true;}
+    auto& part=project_.parts[std::size_t(selected_)];
+    double* lo=axis=='x'?&part.bounds.from.x:axis=='y'?&part.bounds.from.y:&part.bounds.from.z;
+    double* hi=axis=='x'?&part.bounds.to.x:axis=='y'?&part.bounds.to.y:&part.bounds.to.z;
+    double* pivot=axis=='x'?&part.pivot.x:axis=='y'?&part.pivot.y:&part.pivot.z;
+    double* angle=axis=='x'?&part.rotationDegrees.x:axis=='y'?&part.rotationDegrees.y:&part.rotationDegrees.z;
+    if(tool=='w'){*lo+=amount;*hi+=amount;*pivot+=amount;}
+    else if(tool=='e')*angle+=amount;
+    else if(tool=='r')*hi=std::max(*lo+1.0/16.0,*hi+amount);
+    dirty_=true;refreshScene();refreshInspector();updateTitle();
+}
+void MainWindow::editCell(int x,int y,int z,const QString& role){
+    auto cell=Cell{x,y,z};
+    const auto before=project_.cells.find(cell);
+    const std::string value=role.toStdString();
+    if(before!=project_.cells.end()&&before->second==value)return;
+    if(before==project_.cells.end()&&value=="Air")return;
+    snapshot();
+    if(value=="Controller"){
+        for(auto it=project_.cells.begin();it!=project_.cells.end();){
+            if(it->second=="Controller")it=project_.cells.erase(it);else ++it;
+        }
+    }
+    setCell(project_,cell,value);
+    dirty_=true;refreshScene();updateTitle();
+}
+
+static bool sizeDialog(QWidget* parent,const QString& title,QString& name,Dimensions& size,bool rename){
+    QDialog dialog(parent);dialog.setWindowTitle(title);
+    auto* outer=new QVBoxLayout(&dialog);
+    auto* form=new QFormLayout;
+    QLineEdit* nameField=nullptr;
+    if(rename){nameField=new QLineEdit(name,&dialog);form->addRow("Name",nameField);}
+    QSpinBox* axes[3];
+    const char* labels[]={"Width (X)","Height (Y)","Depth (Z)"};
+    for(int i=0;i<3;i++){axes[i]=new QSpinBox(&dialog);axes[i]->setRange(1,128);axes[i]->setValue(size[i]);form->addRow(labels[i],axes[i]);}
+    outer->addLayout(form);
+    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,&dialog);
+    outer->addWidget(buttons);
+    QObject::connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
+    QObject::connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    if(dialog.exec()!=QDialog::Accepted)return false;
+    if(nameField)name=nameField->text().trimmed();
+    if(name.isEmpty())name="New Machine";
+    for(int i=0;i<3;i++)size[i]=axes[i]->value();
+    return true;
+}
+void MainWindow::createNew(){
+    if(!maybeSave())return;
+    QString name="New Multiblock";Dimensions dims{7,5,9};
+    if(!sizeDialog(this,"New Multiblock",name,dims,true))return;
+    project_=makeProject(name.toStdString(),dims);
+    dirty_=false;filename_.clear();loadedJson_={};selected_=-1;undo_.clear();redo_.clear();layer_=0;
+    refreshAll();viewport_->resetCamera();
+}
+void MainWindow::resizeDocument(){
+    QString name=q(project_.name);Dimensions dims=project_.dimensions;
+    if(!sizeDialog(this,"Resize Multiblock",name,dims,false))return;
+    snapshot();resize(project_,dims);selected_=-1;commitChanged();viewport_->resetCamera();
+}
+void MainWindow::openDialog(){
+    if(!maybeSave())return;
+    QString path=QFileDialog::getOpenFileName(this,"Open Studio / Magneticraft2 JSON",{},
+        "Magneticraft2 JSON (*.json *.mcraftstudio);;All files (*)");
+    if(!path.isEmpty())openPath(path);
+}
+void MainWindow::openPath(const QString& path){
+    LoadResult result;QString error;
+    if(!ProjectIO::read(path,result,error)){
+        QMessageBox::warning(this,"Cannot open project",error);return;
+    }
+    project_=std::move(result.project);loadedJson_=std::move(result.original);
+    selected_=-1;layer_=0;filename_=result.fromLegacy ? QString() : path;dirty_=false;undo_.clear();redo_.clear();
+    refreshAll();viewport_->resetCamera();
+}
+void MainWindow::save(){
+    if(filename_.isEmpty()){saveAs();return;}
+    saveTo(filename_);
+}
+void MainWindow::saveAs(){
+    QString path=QFileDialog::getSaveFileName(this,"Save Studio Project",filename_.isEmpty()?q(project_.id)+".mcraftstudio.json":filename_,
+        "Studio project (*.mcraftstudio.json);;JSON (*.json)");
+    if(path.isEmpty())return;
+    if(!path.endsWith(".json",Qt::CaseInsensitive))path+=".mcraftstudio.json";
+    saveTo(path);
+}
+bool MainWindow::saveTo(const QString& path){
+    QString error;
+    if(!ProjectIO::write(path,project_,loadedJson_,error)){
+        QMessageBox::warning(this,"Could not save project",error);return false;
+    }
+    loadedJson_=ProjectIO::encode(project_,loadedJson_);
+    filename_=path;dirty_=false;updateTitle();
+    statusBar()->showMessage("Saved "+path,4000);return true;
+}
+bool MainWindow::maybeSave(){
+    if(!dirty_)return true;
+    const auto answer=QMessageBox::question(this,"Unsaved changes",
+        "Save changes to this multiblock before continuing?",
+        QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel,QMessageBox::Save);
+    if(answer==QMessageBox::Cancel)return false;
+    if(answer==QMessageBox::Discard)return true;
+    save();return !dirty_;
+}
+void MainWindow::exportDialog(){
+    QString directory=QFileDialog::getExistingDirectory(this,"Choose Forge export directory");
+    if(directory.isEmpty())return;
+    QString error;
+    if(!ProjectIO::exportForgeDirectory(directory,project_,loadedJson_,error)){
+        QMessageBox::warning(this,"Forge export failed",error);return;
+    }
+    QMessageBox::information(this,"Construction exported",
+        "Exported four rotated construction JSONs and a validation manifest.\n\n"
+        "The formed model renderer is not integrated with Forge yet. "
+        "Do not treat this export as a drop-in replacement for the current mod renderer.");
+}
+void MainWindow::closeEvent(QCloseEvent* event){
+    if(!maybeSave()){event->ignore();return;}
+    QSettings pref;
+    pref.setValue("window/geometry",saveGeometry());pref.setValue("window/state",saveState());
+    event->accept();
+}
+
+} // namespace studio
