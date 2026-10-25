@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Magneticraft2 Studio
+Comment=Native multiblock model and structure editor
+Exec=magneticraft2-studio
+Icon=magneticraft2-studio
+Terminal=false
+Categories=Graphics;3DGraphics;Development;
