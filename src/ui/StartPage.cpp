@@ -18,7 +18,9 @@ namespace {
 QLabel* label(const QString& text, const char* role, QWidget* parent) {
     auto* item = new QLabel(text,parent);
     item->setObjectName(role);
-    item->setWordWrap(true);
+    item->setWordWrap(QString(role)=="StartCardDescription" ||
+                      QString(role)=="StartExampleDescription" ||
+                      QString(role)=="StartHeroSubtitle");
     item->setTextFormat(Qt::PlainText);
     return item;
 }

@@ -58,6 +58,7 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
 
 /* Landing page is intentionally an application surface, not a startup dialog. */
 QWidget#StartPage, QWidget#StartSurface, QScrollArea#StartScrollArea { background: #111a24; }
+QWidget#StartSurface QLabel { background: transparent; border: none; }
 QLabel#StartEyebrow { color: #e0a16d; font-size: 11pt; font-weight: 850; letter-spacing: 2px; }
 QLabel#StartHeroTitle { color: #f0f4f5; font-size: 28pt; font-weight: 850; }
 QLabel#StartHeroSubtitle { color: #a2b5c1; font-size: 11pt; }

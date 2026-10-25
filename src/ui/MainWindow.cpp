@@ -967,7 +967,8 @@ void MainWindow::importBlockModels(){
     if(files.isEmpty())return;
     // Import relative to the formation controller, not to the world origin.
     // This matches how the washer's baked model extends beyond (-16..32) pixels.
-    Vec3 anchor{double(project_.dimensions[0]/2),0,double(project_.dimensions[2]/2)};
+    Vec3 anchor=project_.kind==ProjectKind::JavaBlock?Vec3{1,1,1}:
+        Vec3{double(project_.dimensions[0]/2),0,double(project_.dimensions[2]/2)};
     for(const auto& [cell,role]:project_.cells){
         if(role=="Controller"){anchor={double(cell.x),double(cell.y),double(cell.z)};break;}
     }
@@ -988,7 +989,15 @@ void MainWindow::importBlockModels(){
         }
         added+=result.parts.size();
         for(const auto& warning:result.warnings)warnings << QFileInfo(fileName).fileName()+": "+warning;
-        for(const auto& part:result.parts)draft.parts.push_back(part);
+        for(const auto& part:result.parts){
+            if(!partBoundsAllowed(draft,part.bounds)){
+                QMessageBox::warning(this,"Java block model limit",
+                    "Imported element '"+q(part.name)+"' would exceed the normal Java block model "
+                    "coordinates (−16..32 pixels). Use a multiblock project for larger geometry.");
+                return;
+            }
+            draft.parts.push_back(part);
+        }
     }
     if(added==0)return;
     snapshot();project_=std::move(draft);
@@ -1006,7 +1015,13 @@ void MainWindow::duplicatePart(){
     if(selected_<0||selected_>=int(project_.parts.size()))return;
     snapshot();Part part=project_.parts[std::size_t(selected_)];
     part.id=nextPartId(project_);part.name+=" Copy";
-    const Vec3 offset{0.25,0,0.25};
+    Vec3 offset{0.25,0,0.25};
+    auto moved=Bounds{part.bounds.from+offset,part.bounds.to+offset};
+    if(!partBoundsAllowed(project_,moved)){
+        offset={-0.25,0,-0.25};
+        moved={part.bounds.from+offset,part.bounds.to+offset};
+        if(!partBoundsAllowed(project_,moved))offset={0,0,0};
+    }
     part.bounds.from=part.bounds.from+offset;part.bounds.to=part.bounds.to+offset;part.pivot=part.pivot+offset;
     project_.parts.push_back(part);selected_=int(project_.parts.size())-1;
     mode_->setCurrentIndex(1);commitChanged();
@@ -1027,7 +1042,9 @@ void MainWindow::applyInspector(){
     part.rotationDegrees={angle_[0]->value(),angle_[1]->value(),angle_[2]->value()};
     part.pivot={pivot_[0]->value(),pivot_[1]->value(),pivot_[2]->value()};
     if(!partBoundsAllowed(project_,part.bounds)){
-        statusBar()->showMessage("Invalid cuboid dimensions: each Min must be smaller than Max",5000);
+        statusBar()->showMessage(project_.kind==ProjectKind::JavaBlock
+            ? "Java block model limit: each element must stay within the 3 × 3 × 3 modeling envelope"
+            : "Invalid cuboid dimensions: each Min must be smaller than Max",6500);
         return;
     }
     const auto& old=project_.parts[std::size_t(selected_)];
@@ -1139,11 +1156,13 @@ void MainWindow::openHome(){
     for(auto* dock:findChildren<QDockWidget*>())dock->hide();
     for(auto* bar:findChildren<QToolBar*>())bar->hide();
     setWindowTitle("Magneticraft2 Studio — Home");
+    if(statusMetrics_)statusMetrics_->hide();
     statusBar()->showMessage("Choose a project type, open an example, or continue a saved project");
 }
 void MainWindow::activateEditor(){
     if(!centralStack_)return;
     atHome_=false;
+    if(statusMetrics_)statusMetrics_->show();
     centralStack_->setCurrentWidget(editorSurface_);
     if(auto* header=findChild<QToolBar*>("StudioHeader"))header->show();
     if(auto* left=findChild<QDockWidget*>("PartsDock"))left->show();
