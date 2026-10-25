@@ -12,10 +12,17 @@ jobs:
       - name: Install Qt 6 and C++ dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ qt6-base-dev libqt6opengl6-dev
+          sudo apt-get install -y cmake ninja-build g++ qt6-base-dev libqt6opengl6-dev xvfb xauth libgl1-mesa-dri
       - name: Configure (native GUI)
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
       - name: Build all
         run: cmake --build build --parallel 2
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
+      - name: Native GUI startup smoke test (software OpenGL)
+        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --smoke --screenshot build/studio-native.png
+      - name: Preserve GUI preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: magneticraft2-studio-native-preview
+          path: build/studio-native.png
