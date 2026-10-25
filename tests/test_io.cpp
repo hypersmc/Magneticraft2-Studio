@@ -1,5 +1,8 @@
 #include "io/ProjectIO.hpp"
 #include <QCoreApplication>
+#include <QImage>
+#include <QBuffer>
+#include <QColor>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -14,12 +17,31 @@ int main(int argc,char**argv) {
     QString err;LoadResult result;
     Project original=makeDemo();
     original.parts.front().rotationDegrees={0,45,0};
+    original.parts.front().faces[0].automatic=false;
+    original.parts.front().faces[0].uv={0.125,0.25,0.75,0.875};
+    original.parts.front().faces[0].texture="textures/demo.png";
+    original.parts.front().faces[0].quarterTurns=2;
+    QImage demo(16,16,QImage::Format_RGBA8888);demo.fill(QColor("#a86a43"));
+    QByteArray png;QBuffer stream(&png);stream.open(QIODevice::WriteOnly);
+    assert(demo.save(&stream,"PNG"));
+    original.textures["textures/demo.png"]=png.toBase64().toStdString();
+
     QJsonObject payload=ProjectIO::encode(original);
     payload["pluginMetadata"]=QJsonObject{{"test",17}};
     bool ok=ProjectIO::decode(QJsonDocument(payload).toJson(),result,err);
     assert(ok && err.isEmpty());
     assert(result.project.parts.size()==original.parts.size());
     assert(result.project.parts.front().rotationDegrees.y==45);
+    assert(!result.project.parts.front().faces[0].automatic);
+    assert(result.project.parts.front().faces[0].uv[0]==0.125);
+    assert(result.project.parts.front().faces[0].texture=="textures/demo.png");
+    assert(result.project.parts.front().faces[0].quarterTurns==2);
+    assert(result.project.textures.at("textures/demo.png")==original.textures.at("textures/demo.png"));
+    // Reject malformed embedded PNG data before it reaches the GPU uploader.
+    QJsonObject malformed=payload;
+    malformed["textures"]=QJsonObject{{"bad","not-an-image"}};
+    LoadResult badResult;QString badMessage;
+    assert(!ProjectIO::decode(QJsonDocument(malformed).toJson(),badResult,badMessage));
     QJsonObject roundTrip=ProjectIO::encode(result.project,result.original);
     assert(roundTrip.value("pluginMetadata").toObject().value("test").toInt()==17);
     assert(roundTrip.value("parts").toArray().size()==payload.value("parts").toArray().size());

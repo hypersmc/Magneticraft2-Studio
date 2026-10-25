@@ -14,10 +14,14 @@ class QSpinBox;
 class QTreeWidget;
 class QCheckBox;
 class QCloseEvent;
+class QDockWidget;
+class QLabel;
+class QPushButton;
 
 namespace studio {
 class LayerCanvas;
 class Viewport;
+class UvEditor;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -30,6 +34,15 @@ private:
     void buildUI();
     void createMenus();
     void createInspector();
+    void createTextureDock();
+    void refreshTexturePanel();
+    void importPngTexture();
+    void applyTextureToCube();
+    void applyFaceTexture();
+    void setAutoUv();
+    void rotateUv();
+    void flipUv(bool horizontal);
+    void applyUvNumbers();
     void refreshAll();
     void refreshScene();
     void refreshInspector();
@@ -64,6 +77,7 @@ private:
     bool dirty_=false;
     bool updating_=false;
     bool dragChanged_=false;
+    bool uvDragChanged_=false;
     std::vector<Project> undo_,redo_;
     int selected_=-1;
     int layer_=0;
@@ -91,6 +105,13 @@ private:
     QDoubleSpinBox* angle_[3]{};
     QDoubleSpinBox* pivot_[3]{};
     QCheckBox* visible_=nullptr;
+    QDockWidget* textureDock_=nullptr;
+    UvEditor* uvCanvas_=nullptr;
+    QComboBox* uvFace_=nullptr;
+    QComboBox* uvTexture_=nullptr;
+    QDoubleSpinBox* uvNumbers_[4]{};
+    QLabel* textureInfo_=nullptr;
+    QPushButton* applyTexture_=nullptr;
     QAction* undoAction_=nullptr;
     QAction* redoAction_=nullptr;
 };

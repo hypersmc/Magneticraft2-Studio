@@ -32,6 +32,15 @@ struct CellHash {
         return mix(h, std::uint32_t(c.z));
     }
 };
+// Face order: South (+Z), North (-Z), West (-X), East (+X), Up (+Y), Down (-Y).
+// Coordinates are in texture tiles: 1.0 = the full imported PNG. When automatic,
+// each world block maps to one texture tile (no accidental stretching).
+struct FaceUV {
+    std::string texture; // Empty means inherit the cuboid texture.
+    std::array<double,4> uv{0.0,0.0,1.0,1.0};
+    bool automatic=true;
+    int quarterTurns=0;
+};
 struct Part {
     std::string id;
     std::string name = "Cube";
@@ -39,6 +48,7 @@ struct Part {
     std::string material = "wood";
     std::string texture = "";
     std::string motionId = "";
+    std::array<FaceUV,6> faces{};
     Bounds bounds{{0,0,0},{1,1,1}};
     Vec3 pivot{0.5,0.5,0.5};
     Vec3 rotationDegrees{};
@@ -61,6 +71,9 @@ struct Project {
     std::map<std::string, std::string> palette;
     Cells cells;
     std::vector<Part> parts;
+    // Embedded PNG bytes as base64: portable, offline and self-contained.
+    // Texture keys can be referenced by Part.texture or FaceUV.texture.
+    std::map<std::string,std::string> textures;
     std::vector<Motion> motions;
     std::string notes;
     bool omittedAirInSource = false;
@@ -81,6 +94,8 @@ double snapSixteenth(double x);
 Dimensions rotatedDimensions(Dimensions dims, Direction direction);
 Cell rotateCell(Cell cell, Dimensions original, Direction direction);
 Bounds rotateBox(Bounds bounds, Dimensions original, Direction direction);
+std::array<double,4> effectiveUV(const Part& part, int face);
+void makeManualUV(Part& part,int face);
 Project makeProject(const std::string& name, Dimensions dims);
 Project makeDemo();
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Magneticraft2Studio VERSION 0.3.0 LANGUAGES CXX)
+project(Magneticraft2Studio VERSION 0.4.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -29,6 +29,7 @@ if(NOT STUDIO_HEADLESS_ONLY)
         src/ui/MainWindow.hpp src/ui/MainWindow.cpp
         src/ui/Viewport.hpp src/ui/Viewport.cpp
         src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
+        src/ui/UvEditor.hpp src/ui/UvEditor.cpp
     )
     target_link_libraries(magneticraft2-studio PRIVATE studio_core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
     install(TARGETS magneticraft2-studio RUNTIME DESTINATION bin)
@@ -49,12 +50,17 @@ if(STUDIO_BUILD_TESTS)
     add_test(NAME studio-modeling-tests COMMAND studio-modeling-tests)
     if(NOT STUDIO_HEADLESS_ONLY)
         find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
+        add_executable(studio-gizmos-uv-tests tests/test_gizmos_uv.cpp
+            src/ui/Viewport.hpp src/ui/Viewport.cpp
+            src/ui/UvEditor.hpp src/ui/UvEditor.cpp)
+        target_link_libraries(studio-gizmos-uv-tests PRIVATE studio_core
+            Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test)
         add_executable(studio-model-ui-tests tests/test_model_ui.cpp
             src/ui/Viewport.hpp src/ui/Viewport.cpp)
         target_link_libraries(studio-model-ui-tests PRIVATE studio_core
             Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test)
         add_executable(studio-io-tests tests/test_io.cpp src/io/ProjectIO.hpp src/io/ProjectIO.cpp)
-        target_link_libraries(studio-io-tests PRIVATE studio_core Qt6::Core)
+        target_link_libraries(studio-io-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-io-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-io-tests COMMAND studio-io-tests)
     endif()

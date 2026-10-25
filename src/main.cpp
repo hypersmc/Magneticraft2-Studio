@@ -24,7 +24,7 @@ int main(int argc,char** argv) {
     QApplication app(argc,argv);
     QCoreApplication::setOrganizationName("Magneticraft2");
     QCoreApplication::setApplicationName("Magneticraft2-Studio");
-    QCoreApplication::setApplicationVersion("0.3.0-alpha");
+    QCoreApplication::setApplicationVersion("0.4.0-alpha");
     app.setStyle(QStyleFactory::create("Fusion"));
     QFont font=app.font();font.setPointSize(10);app.setFont(font);
     QPalette pal=app.palette();

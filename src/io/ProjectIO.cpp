@@ -43,6 +43,17 @@ static QJsonObject partObject(const Part& part,QJsonObject original) {
     original["from"]=array(part.bounds.from);original["to"]=array(part.bounds.to);
     original["pivot"]=array(part.pivot);original["rotation"]=array(part.rotationDegrees);
     if(!part.texture.empty())original["texture"]=q(part.texture);else original.remove("texture");
+    QJsonObject faces;
+    constexpr const char* faceNames[]={"south","north","west","east","up","down"};
+    for(int i=0;i<6;i++) {
+        const auto& f=part.faces[std::size_t(i)];
+        QJsonObject uv{{"auto",f.automatic},{"rotate",f.quarterTurns}};
+        if(!f.texture.empty())uv["texture"]=q(f.texture);
+        QJsonArray rect;for(double n:f.uv)rect.append(n);
+        uv["uv"]=rect;
+        faces[faceNames[i]]=uv;
+    }
+    original["faces"]=faces;
     if(!part.motionId.empty())original["motionId"]=q(part.motionId);else original.remove("motionId");
     return original;
 }
@@ -58,6 +69,25 @@ static Part readPart(const QJsonObject& obj) {
     if(part.name.empty())part.name="Cube";
     part.pivot=vec(obj.value("pivot"),(part.bounds.from+part.bounds.to)*0.5);
     part.rotationDegrees=vec(obj.value("rotation"));
+    const QJsonObject faces=obj.value("faces").toObject();
+    constexpr const char* faceNames[]={"south","north","west","east","up","down"};
+    for(int i=0;i<6;i++) {
+        const QJsonObject f=faces.value(faceNames[i]).toObject();
+        if(f.isEmpty())continue;
+        auto& target=part.faces[std::size_t(i)];
+        target.texture=s(f.value("texture"));
+        target.automatic=f.value("auto").toBool(true);
+        target.quarterTurns=std::clamp(f.value("rotate").toInt(0),-1000,1000);
+        const auto uv=f.value("uv").toArray();
+        if(uv.size()==4) {
+            for(int k=0;k<4;k++) {
+                const double value=uv[k].toDouble();
+                if(!std::isfinite(value)||std::abs(value)>128.0)
+                    throw std::invalid_argument("Invalid face UV coordinate");
+                target.uv[std::size_t(k)]=value;
+            }
+        }
+    }
     return part;
 }
 static QJsonObject defaultSettings() {
@@ -74,6 +104,9 @@ QJsonObject ProjectIO::encode(const Project& p,const QJsonObject& original) {
     QJsonObject roles;
     for(const auto& [key,value]:p.palette)roles[q(key)]=q(value);
     result["palette"]=roles;
+    QJsonObject textures;
+    for(const auto& [id,bytes]:p.textures)textures[q(id)]=q(bytes);
+    result["textures"]=textures;
     QJsonObject cells;
     for(const auto& [coord,role]:p.cells)cells[q(cellString(coord))]=q(role);
     result["cells"]=cells;
@@ -152,6 +185,23 @@ bool ProjectIO::decode(const QByteArray& bytes,LoadResult& out,QString& error) {
         auto roles=root.value("palette").toObject();
         for(auto it=roles.begin();it!=roles.end();++it)p.palette[it.key().toStdString()]=s(it.value());
         if(p.palette.find("Air")==p.palette.end())p.palette["Air"]="minecraft:air";
+        const auto loadedTextures=root.value("textures").toObject();
+        if(loadedTextures.size()>256)throw std::invalid_argument("Too many embedded textures");
+        std::size_t totalTextureBytes=0;
+        for(auto it=loadedTextures.begin();it!=loadedTextures.end();++it) {
+            if(!it.value().isString() || it.key().size()>160 || it.key().isEmpty())
+                throw std::invalid_argument("Invalid embedded texture ID");
+            const QByteArray encoded=it.value().toString().toLatin1();
+            if(encoded.size()>8*1024*1024)
+                throw std::invalid_argument("Embedded texture exceeds 6 MiB");
+            totalTextureBytes+=std::size_t(encoded.size());
+            if(totalTextureBytes>48*1024*1024)
+                throw std::invalid_argument("Embedded textures exceed 36 MiB");
+            const auto raw=QByteArray::fromBase64(encoded,QByteArray::AbortOnBase64DecodingErrors);
+            if(raw.isEmpty() || !raw.startsWith("\x89PNG\r\n\x1a\n"))
+                throw std::invalid_argument("Embedded texture is not a valid PNG");
+            p.textures[it.key().toStdString()]=encoded.toStdString();
+        }
         const auto cells=root.value("cells").toObject();
         for(auto it=cells.begin();it!=cells.end();++it) {
             Cell c;

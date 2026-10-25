@@ -1,11 +1,17 @@
 #include "MainWindow.hpp"
 #include "LayerCanvas.hpp"
+#include "UvEditor.hpp"
 #include "Viewport.hpp"
 #include "io/ProjectIO.hpp"
 #include "core/Modeling.hpp"
 
 #include <QAction>
 #include <QApplication>
+#include <QBuffer>
+#include <QImage>
+#include <QImageReader>
+#include <QFileInfo>
+#include <QPushButton>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -109,6 +115,7 @@ void MainWindow::buildUI(){
     inspector->setWidget(scroller);addDockWidget(Qt::RightDockWidgetArea,inspector);
     inspector->setMinimumWidth(250);
     createInspector();
+    createTextureDock();
     statusBar()->showMessage("Native GPU viewport  |  Mouse orbit: left-drag empty space  |  Pan: middle-drag  |  Zoom: wheel");
 
     connect(role_,&QComboBox::currentTextChanged,layers_,&LayerCanvas::setRole);
@@ -165,7 +172,7 @@ void MainWindow::createInspector(){
         pivot_[i]=coordinateSpin(contents);tf->addRow(QString("Pivot ")+axes[i],pivot_[i]);
     }
     layout->addWidget(transform);
-    auto* help=new QLabel("MODEL TOOLS\nV Select  /  B Draw cube\nW Move  /  E Rotate  /  R Resize\nX / Y / Z: active handle axis\nLeft-drag workplane to draw new geometry.\n1 unit = 1 Minecraft block (16 pixels).\nTexture ID is saved; textured preview is upcoming.",contents);
+    auto* help=new QLabel("MODEL TOOLS\nV Select / B Draw cube\nW Move / E Rotate / R Resize\nDrag red, green, blue handles for axes.\nMove: drag plane squares or white center for free motion.\nResize: drag white center for uniform resize.\nTexture & UV panel: import PNG, assign faces and drag UVs.\n1 unit = 16 Minecraft pixels.",contents);
     help->setWordWrap(true);help->setObjectName("InspectorHelp");layout->addWidget(help);layout->addStretch();
     const auto connectEdit=[this](){
         // Spinboxes use keyboardTracking=false, so user typing a number commits
@@ -184,6 +191,190 @@ void MainWindow::createInspector(){
         connect(pivot_[i],QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,connectEdit);
     }
 }
+void MainWindow::createTextureDock(){
+    textureDock_=new QDockWidget("TEXTURES  /  UV",this);
+    textureDock_->setObjectName("TextureDock");
+    auto* props=findChild<QDockWidget*>("PropertiesDock");
+    auto* panel=new QWidget(textureDock_);
+    auto* layout=new QVBoxLayout(panel);
+    layout->setContentsMargins(10,10,10,10);
+    auto* import=new QPushButton("+ Import PNG texture",panel);
+    import->setObjectName("ImportPngButton");
+    layout->addWidget(import);
+    connect(import,&QPushButton::clicked,this,&MainWindow::importPngTexture);
+    auto* form=new QFormLayout;
+    uvFace_=new QComboBox(panel);
+    uvFace_->setObjectName("UvFaceSelect");
+    uvFace_->addItems({"South (+Z)","North (-Z)","West (-X)","East (+X)","Up (+Y)","Down (-Y)"});
+    form->addRow("Cuboid face",uvFace_);
+    uvTexture_=new QComboBox(panel);
+    uvTexture_->setObjectName("UvTextureSelect");
+    form->addRow("Face texture",uvTexture_);
+    layout->addLayout(form);
+    applyTexture_=new QPushButton("Apply selected PNG to whole cube",panel);
+    layout->addWidget(applyTexture_);
+    connect(applyTexture_,&QPushButton::clicked,this,&MainWindow::applyTextureToCube);
+    textureInfo_=new QLabel(panel);
+    textureInfo_->setWordWrap(true);
+    textureInfo_->setStyleSheet("color:#aec2cf;");
+    layout->addWidget(textureInfo_);
+    uvCanvas_=new UvEditor(panel);
+    uvCanvas_->setObjectName("UvCanvas");
+    layout->addWidget(uvCanvas_);
+    auto* controls=new QHBoxLayout;
+    auto* autoUV=new QPushButton("Auto UV",panel);
+    auto* rotateUV=new QPushButton("Rotate 90°",panel);
+    auto* flipU=new QPushButton("Flip U",panel);
+    auto* flipV=new QPushButton("Flip V",panel);
+    for(auto* b:{autoUV,rotateUV,flipU,flipV})controls->addWidget(b);
+    layout->addLayout(controls);
+    auto* uvForm=new QFormLayout;
+    const char* labels[]={"U min","V min","U max","V max"};
+    for(int i=0;i<4;i++){
+        uvNumbers_[i]=coordinateSpin(panel);
+        uvNumbers_[i]->setObjectName(QString("UvNumber%1").arg(i));
+        uvNumbers_[i]->setRange(-8.0,32.0);
+        uvNumbers_[i]->setDecimals(4);
+        uvForm->addRow(labels[i],uvNumbers_[i]);
+        connect(uvNumbers_[i],&QDoubleSpinBox::editingFinished,this,&MainWindow::applyUvNumbers);
+    }
+    layout->addLayout(uvForm);
+    auto* hint=new QLabel("UVs are measured in texture tiles (1.0 = full PNG).\n"
+        "Auto UV repeats once per Minecraft block, avoiding stretched pixels.\n"
+        "Drag corner handles or inside the outlined UV rectangle to edit.",panel);
+    hint->setWordWrap(true);hint->setStyleSheet("color:#8fa3b0;");
+    layout->addWidget(hint);
+    layout->addStretch(1);
+    textureDock_->setWidget(panel);
+    textureDock_->setMinimumWidth(310);
+    addDockWidget(Qt::RightDockWidgetArea,textureDock_);
+    if(props)tabifyDockWidget(props,textureDock_);
+    textureDock_->raise();
+    connect(uvFace_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){refreshTexturePanel();});
+    connect(uvTexture_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){applyFaceTexture();});
+    connect(autoUV,&QPushButton::clicked,this,&MainWindow::setAutoUv);
+    connect(rotateUV,&QPushButton::clicked,this,&MainWindow::rotateUv);
+    connect(flipU,&QPushButton::clicked,this,[this](){flipUv(true);});
+    connect(flipV,&QPushButton::clicked,this,[this](){flipUv(false);});
+    connect(uvCanvas_,&UvEditor::editBegan,this,[this](){uvDragChanged_=false;});
+    connect(uvCanvas_,&UvEditor::rectChanged,this,[this](double u0,double v0,double u1,double v1){
+        if(selected_<0||selected_>=int(project_.parts.size()))return;
+        if(!uvDragChanged_){snapshot();uvDragChanged_=true;}
+        auto& part=project_.parts[std::size_t(selected_)];
+        auto& face=part.faces[std::size_t(uvFace_->currentIndex())];
+        face.uv={u0,v0,u1,v1};face.automatic=false;
+        dirty_=true;refreshScene();updateTitle();
+        const double vals[]={u0,v0,u1,v1};
+        for(int i=0;i<4;i++){QSignalBlocker blocker(uvNumbers_[i]);uvNumbers_[i]->setValue(vals[i]);}
+    });
+    connect(uvCanvas_,&UvEditor::editEnded,this,[this](){uvDragChanged_=false;refreshTexturePanel();});
+}
+void MainWindow::refreshTexturePanel(){
+    if(!textureDock_||!uvTexture_||!uvCanvas_)return;
+    const bool enabled=selected_>=0&&selected_<int(project_.parts.size());
+    const int index=std::clamp(uvFace_->currentIndex(),0,5);
+    uvFace_->setEnabled(enabled);
+    applyTexture_->setEnabled(enabled);
+    const FaceUV* selectedFace=enabled?&project_.parts[std::size_t(selected_)].faces[std::size_t(index)]:nullptr;
+    const QString faceTexture=selectedFace?q(selectedFace->texture):QString();
+    {
+        QSignalBlocker blocker(uvTexture_);
+        uvTexture_->clear();
+        uvTexture_->addItem("Inherit cuboid texture",QString());
+        for(const auto& [id,png]:project_.textures){Q_UNUSED(png);uvTexture_->addItem(q(id),q(id));}
+        if(!faceTexture.isEmpty()&&uvTexture_->findData(faceTexture)<0)
+            uvTexture_->addItem("External: "+faceTexture,faceTexture);
+        auto chosen=uvTexture_->findData(faceTexture);
+        uvTexture_->setCurrentIndex(std::max(chosen,0));
+    }
+    uvTexture_->setEnabled(enabled);
+    for(auto* spin:uvNumbers_)spin->setEnabled(enabled);
+    if(!enabled){
+        uvCanvas_->setEnabled(false);uvCanvas_->setImage({});uvCanvas_->setRect({0,0,1,1});
+        textureInfo_->setText("Select a formed-model cuboid to edit its face textures.");
+        return;
+    }
+    uvCanvas_->setEnabled(true);
+    const Part& part=project_.parts[std::size_t(selected_)];
+    const auto rectangle=effectiveUV(part,index);
+    uvCanvas_->setRect(rectangle);
+    for(int i=0;i<4;i++){
+        QSignalBlocker blocker(uvNumbers_[i]);
+        uvNumbers_[i]->setValue(rectangle[std::size_t(i)]);
+    }
+    const auto texture=selectedFace->texture.empty()?part.texture:selectedFace->texture;
+    const auto found=project_.textures.find(texture);
+    QImage image;
+    if(found!=project_.textures.end())
+        image=QImage::fromData(QByteArray::fromBase64(QByteArray::fromStdString(found->second)),"PNG");
+    uvCanvas_->setImage(image);
+    textureInfo_->setText(image.isNull()?"No embedded PNG for this face. Viewport shows procedural material texture."
+        :QString("PNG preview: %1 x %2 px  ·  %3").arg(image.width()).arg(image.height()).arg(q(texture)));
+}
+void MainWindow::importPngTexture(){
+    const QString filename=QFileDialog::getOpenFileName(this,"Import texture PNG",{},"PNG images (*.png)");
+    if(filename.isEmpty())return;
+    QFile file(filename);
+    if(!file.open(QIODevice::ReadOnly)){QMessageBox::warning(this,"Cannot open texture",file.errorString());return;}
+    const auto bytes=file.readAll();
+    if(bytes.size()>6*1024*1024){QMessageBox::warning(this,"PNG too large","Use a PNG smaller than 6 MiB.");return;}
+    QImage image=QImage::fromData(bytes,"PNG");
+    if(image.isNull()||image.width()>4096||image.height()>4096){
+        QMessageBox::warning(this,"Unsupported PNG","Texture must be a readable PNG at most 4096x4096 pixels.");return;
+    }
+    if(project_.textures.size()>=256){QMessageBox::warning(this,"Too many textures","Maximum 256 embedded PNGs per project.");return;}
+    QString id="textures/"+q(slugify(QFileInfo(filename).completeBaseName().toStdString()))+".png";
+    const QString base=id;int suffix=2;
+    while(project_.textures.count(id.toStdString()))id=base.left(base.size()-4)+"_"+QString::number(suffix++)+".png";
+    snapshot();project_.textures[id.toStdString()]=bytes.toBase64().toStdString();
+    if(selected_>=0&&selected_<int(project_.parts.size()))
+        project_.parts[std::size_t(selected_)].texture=id.toStdString();
+    commitChanged();
+    statusBar()->showMessage("Imported "+id+" — embedded inside project file",5500);
+}
+void MainWindow::applyTextureToCube(){
+    if(selected_<0||selected_>=int(project_.parts.size()))return;
+    const QString texture=uvTexture_->currentData().toString();
+    if(texture.isEmpty())return;
+    snapshot();auto& part=project_.parts[std::size_t(selected_)];
+    part.texture=texture.toStdString();
+    for(auto& face:part.faces)face.texture.clear();
+    commitChanged();
+}
+void MainWindow::applyFaceTexture(){
+    if(updating_||selected_<0||selected_>=int(project_.parts.size())||uvTexture_->currentIndex()<0)return;
+    const auto value=uvTexture_->currentData().toString().toStdString();
+    auto& face=project_.parts[std::size_t(selected_)].faces[std::size_t(uvFace_->currentIndex())];
+    if(face.texture==value)return;
+    snapshot();face.texture=value;commitChanged();
+}
+void MainWindow::setAutoUv(){
+    if(selected_<0||selected_>=int(project_.parts.size()))return;
+    snapshot();project_.parts[std::size_t(selected_)].faces[std::size_t(uvFace_->currentIndex())].automatic=true;
+    commitChanged();
+}
+void MainWindow::rotateUv(){
+    if(selected_<0||selected_>=int(project_.parts.size()))return;
+    snapshot();auto& f=project_.parts[std::size_t(selected_)].faces[std::size_t(uvFace_->currentIndex())];
+    f.quarterTurns=(f.quarterTurns+1)%4;commitChanged();
+}
+void MainWindow::flipUv(bool horizontal){
+    if(selected_<0||selected_>=int(project_.parts.size()))return;
+    snapshot();auto& p=project_.parts[std::size_t(selected_)];
+    const int face=uvFace_->currentIndex();
+    makeManualUV(p,face);
+    auto& f=p.faces[std::size_t(face)];
+    if(horizontal)std::swap(f.uv[0],f.uv[2]);else std::swap(f.uv[1],f.uv[3]);
+    commitChanged();
+}
+void MainWindow::applyUvNumbers(){
+    if(updating_||selected_<0||selected_>=int(project_.parts.size()))return;
+    const std::array<double,4> uv{uvNumbers_[0]->value(),uvNumbers_[1]->value(),uvNumbers_[2]->value(),uvNumbers_[3]->value()};
+    auto& f=project_.parts[std::size_t(selected_)].faces[std::size_t(uvFace_->currentIndex())];
+    if(!f.automatic&&f.uv==uv)return;
+    snapshot();f.automatic=false;f.uv=uv;commitChanged();
+}
+
 void MainWindow::createMenus(){
     auto* file=menuBar()->addMenu("&File");
     auto* newAction=file->addAction("New multiblock",QKeySequence::New,this,&MainWindow::createNew);
@@ -206,12 +397,15 @@ void MainWindow::createMenus(){
 
     auto* view=menuBar()->addMenu("&View");
     view->addAction("Fit entire structure",QKeySequence("F"),viewport_,&Viewport::resetCamera);
+    auto* textures=menuBar()->addMenu("&Textures");
+    textures->addAction("Import PNG...",this,&MainWindow::importPngTexture);
+    textures->addAction("Apply selected texture to whole cube",this,&MainWindow::applyTextureToCube);
     auto* help=menuBar()->addMenu("&Help");
     help->addAction("About Magneticraft2 Studio",this,[this](){
-        QMessageBox::about(this,"Magneticraft2 Studio", "<b>Magneticraft2 Studio — Native Linux Model Workspace v0.3</b><br>"
+        QMessageBox::about(this,"Magneticraft2 Studio", "<b>Magneticraft2 Studio — Native Linux Model Workspace v0.4</b><br>"
             "C++17 + Qt 6 + OpenGL 3.3 Core<br><br>"
             "Dedicated 3D model workspace with direct cube drawing, grid snapping, views and Studio v1 save/load.<br>"
-            "<b>Not yet:</b> real textured UV preview, animation authoring, or mod-side tiled rendering.");
+            "<b>Not yet:</b> animated mechanical rigs, full Blockbench editing parity or mod-side tiled rendering.");
     });
 
     auto* toolbar=addToolBar("Modeling");toolbar->setObjectName("ModelToolbar");
@@ -354,6 +548,7 @@ void MainWindow::refreshInspector(){
         partName_->clear();groupName_->clear();texture_->clear();visible_->setChecked(false);
     }
     updating_=false;
+    refreshTexturePanel();
 }
 void MainWindow::refreshScene(){
     BuildOptions view;
@@ -436,6 +631,7 @@ void MainWindow::switchWorkspace(){
     const bool isModel=mode_->currentIndex()==1;
     layerContainer_->setVisible(!isModel);
     tool_->setEnabled(isModel);axis_->setEnabled(isModel);
+    if(textureDock_)textureDock_->setVisible(isModel);
     snap_->setEnabled(isModel);workPlane_->setEnabled(isModel);
     drawHeight_->setEnabled(isModel && tool_->currentData().toInt()==int('b'));
     ghost_->setEnabled(isModel);

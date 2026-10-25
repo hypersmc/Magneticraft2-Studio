@@ -40,7 +40,7 @@ Bounds transformedBounds(const Part& part) {
     return out;
 }
 static void line(Geometry& mesh, Vec3 a, Vec3 b, Rgb color) {
-    auto append=[&](Vec3 v){mesh.lines.push_back({float(v.x),float(v.y),float(v.z),color.r,color.g,color.b,0,0,0});};
+    auto append=[&](Vec3 v){mesh.lines.push_back({float(v.x),float(v.y),float(v.z),color.r,color.g,color.b,0,0,0,0,0});};
     append(a);append(b);
 }
 static void drawEdges(Geometry& mesh, const std::array<Vec3,8>& points,Rgb color) {
@@ -52,7 +52,7 @@ static void drawEdges(Geometry& mesh, const std::array<Vec3,8>& points,Rgb color
 static constexpr int faces[6][4]={{4,5,6,7},{1,0,3,2},{0,4,7,3},
     {5,1,2,6},{3,7,6,2},{0,1,5,4}};
 static void drawCube(Geometry& mesh,const std::array<Vec3,8>& pts,Rgb color,
-    const std::array<bool,6>& visible) {
+    const std::array<bool,6>& visible, const Part* part=nullptr) {
     for(int face=0;face<6;face++) {
         if(!visible[face])continue;
         const auto& idx=faces[face];
@@ -61,14 +61,37 @@ static void drawCube(Geometry& mesh,const std::array<Vec3,8>& pts,Rgb color,
         Vec3 n{u.y*v.z-u.z*v.y,u.z*v.x-u.x*v.z,u.x*v.y-u.y*v.x};
         const double inv=1.0/std::max(1e-9,std::sqrt(n.x*n.x+n.y*n.y+n.z*n.z));
         n=n*inv;
-        const auto add=[&](int i) {
-            const Vec3 p=pts[idx[i]];
-            mesh.triangles.push_back({float(p.x),float(p.y),float(p.z),
-                color.r,color.g,color.b,float(n.x),float(n.y),float(n.z)});
-        };
-        add(0);add(1);add(2);add(0);add(2);add(3);
+        std::array<double,4> uv{0,0,1,1};
+        std::string texture,material;
+        int turn=0;
+        if(part) {
+            uv=effectiveUV(*part,face);
+            const FaceUV& chosen=part->faces[std::size_t(face)];
+            texture=chosen.texture.empty()?part->texture:chosen.texture;
+            material=part->material;
+            turn=((chosen.quarterTurns%4)+4)%4;
+        }
+        const std::array<std::array<double,2>,4> coords{{
+            {uv[0],uv[3]},{uv[2],uv[3]},{uv[2],uv[1]},{uv[0],uv[1]}
+        }};
+        const std::array<int,6> index{{0,1,2,0,2,3}};
+        const auto first=mesh.triangles.size();
+        for(int i:index) {
+            const Vec3 pt=pts[idx[i]];
+            const auto& texcoord=coords[std::size_t((i+turn)%4)];
+            mesh.triangles.push_back({float(pt.x),float(pt.y),float(pt.z),
+                color.r,color.g,color.b,float(n.x),float(n.y),float(n.z),
+                float(texcoord[0]),float(texcoord[1])});
+        }
+        // Merge neighboring faces when they share a texture, avoiding one GL
+        // draw call per face for a model with repeated material assignments.
+        if(!mesh.draws.empty() && mesh.draws.back().first+mesh.draws.back().count==first
+           && mesh.draws.back().texture==texture && mesh.draws.back().material==material
+           && mesh.draws.back().useTexture==(part!=nullptr))mesh.draws.back().count+=6;
+        else mesh.draws.push_back({first,6,texture,material,part!=nullptr});
     }
 }
+
 Geometry buildGeometry(const Project& p,BuildOptions options) {
     Geometry result;
     const auto& dim=p.dimensions;
@@ -114,7 +137,7 @@ Geometry buildGeometry(const Project& p,BuildOptions options) {
             if(!part.visible || !validBounds(part.bounds))continue;
             auto pts=corners(part.bounds);
             for(auto& v:pts)v=rotateEuler(v,part.pivot,part.rotationDegrees);
-            drawCube(result,pts,materialColor(part.material),{true,true,true,true,true,true});
+            drawCube(result,pts,{1.0f,1.0f,1.0f},{true,true,true,true,true,true},&part);
             if(int(i)==options.selectedPart) {
                 drawEdges(result,pts,{1.0f,0.79f,0.27f});
                 const Vec3 pivot=part.pivot;

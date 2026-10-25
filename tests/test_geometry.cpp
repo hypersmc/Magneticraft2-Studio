@@ -36,5 +36,25 @@ int main(){
     giant.cells.clear();giant.cells[{127,127,127}]="Frame";
     auto geometry=buildGeometry(giant,{true,false,false,true,-1,-1});
     assert(geometry.triangles.size()==36);
+    // UVs in one-tile-per-block mode must repeat on beams, not stretch one
+    // pixel art texture across an oversized cuboid.
+    auto longPart=makeBox(project,{{0,0,0},{8,2,0.5}});
+    const auto faceUV=effectiveUV(longPart,0);
+    assert(faceUV[2]==8.0 && faceUV[3]==2.0);
+    assert(longPart.faces[0].automatic);
+    makeManualUV(longPart,0);
+    assert(!longPart.faces[0].automatic);
+    assert(longPart.faces[0].uv[2]==8.0);
+    longPart.faces[0].uv={0,0,0.5,0.5};
+    assert(effectiveUV(longPart,0)[2]==0.5);
+    auto colored=makeProject("UV geometry",{10,4,4});
+    colored.parts.push_back(longPart);
+    BuildOptions view;view.showConstruction=false;view.showFormed=true;
+    const Geometry preview=buildGeometry(colored,view);
+    assert(preview.triangles.size()==36);
+    assert(preview.draws.size()==1);
+    assert(preview.draws.front().first==0 && preview.draws.front().count==36);
+    assert(preview.draws.front().useTexture);
+    assert(preview.triangles[0].u>=0 && preview.triangles[0].v>=0);
     std::cout<<"Native renderer mesh and sparse-culling tests passed\n";
 }

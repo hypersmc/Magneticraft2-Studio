@@ -7,6 +7,9 @@
 #include <QOpenGLShaderProgram>
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLWidget>
+#include <QOpenGLTexture>
+#include <QImage>
+#include <map>
 #include <QPoint>
 #include <QThreadPool>
 #include <QTimer>
@@ -36,6 +39,7 @@ public:
     void setGridStep(double step);
     void setCameraPreset(int preset); // 0 perspective, 1 top, 2 front, 3 right
     bool rendererReady() const { return glReady_; }
+    QPointF gizmoCenterOnScreen() const;
 signals:
     void partSelected(int index);
     void beginEdit();
@@ -66,9 +70,14 @@ private:
     int pickPart(const QPoint& at) const;
     QPointF projectPoint(Vec3 pos) const;
     void uploadBuffers();
+    QOpenGLTexture* getTexture(const std::string& id,const std::string& material);
     void drawBuffer(QOpenGLBuffer& buffer, const std::vector<Vertex>& verts,GLenum primitive);
     bool workPlaneAt(const QPoint& screen,Vec3& point) const;
     char gizmoAt(const QPoint& screen) const;
+    double gizmoLength() const;
+    bool screenOnPlane(const QPoint& screen,Vec3 center,Vec3 normal,Vec3& result) const;
+    Vec3 handlePlane(char handle) const;
+    void beginHandleDrag(char handle,const QPoint& mouse);
     void drawModelOverlay(QPainter& painter);
     void updateHud();
 
@@ -78,6 +87,8 @@ private:
     QThreadPool pool_;
     QTimer poll_;
     Geometry mesh_;
+    struct CachedTexture { std::size_t signature=0;std::unique_ptr<QOpenGLTexture> gpu; };
+    std::map<std::string,CachedTexture> textureCache_;
     bool dirtyGpu_=true;
     bool glReady_=false;
     QOpenGLShaderProgram shader_;
@@ -104,6 +115,13 @@ private:
     int cameraPreset_=0;
     double dragAccum_=0;
     double emittedDrag_=0;
+    QPoint dragMouseStart_;
+    Vec3 dragPivot_{};
+    Vec3 dragAnchor_{};
+    Vec3 dragSent_{};
+    Vec3 dragPlaneNormal_{};
+    char dragHandle_=0;
+    bool dragHasAnchor_=false;
     double distance_=12;
     double yaw_=0.8, pitch_=0.55;
     QVector3D target_{2.5f,1.0f,2.5f};

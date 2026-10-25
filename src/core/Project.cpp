@@ -150,4 +150,20 @@ std::vector<SlicedCuboid> sliceStaticPart(const Part& part, Dimensions original,
     return out;
 }
 
+
+std::array<double,4> effectiveUV(const Part& part,int face) {
+    if(face<0||face>=6)throw std::out_of_range("Invalid cuboid face");
+    const FaceUV& f=part.faces[std::size_t(face)];
+    if(!f.automatic)return f.uv;
+    const Vec3 extent=part.bounds.to-part.bounds.from;
+    const double w=(face==0||face==1||face==4||face==5)?extent.x:extent.z;
+    const double h=(face==4||face==5)?extent.z:extent.y;
+    return {0.0,0.0,w,h};
+}
+void makeManualUV(Part& part,int face) {
+    if(face<0||face>=6)throw std::out_of_range("Invalid cuboid face");
+    auto& uv=part.faces[std::size_t(face)];
+    if(uv.automatic){uv.uv=effectiveUV(part,face);uv.automatic=false;}
+}
+
 } // namespace studio
