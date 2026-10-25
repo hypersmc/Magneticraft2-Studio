@@ -5,6 +5,8 @@
 #include <QPainter>
 #include <QPen>
 #include <QFont>
+#include <QLabel>
+#include <QResizeEvent>
 #include <QOpenGLContext>
 #include <QVector2D>
 #include <QVector4D>
@@ -24,7 +26,18 @@ Viewport::Viewport(QWidget* parent):QOpenGLWidget(parent),mailbox_(std::make_sha
     setMouseTracking(true);
     connect(&poll_,&QTimer::timeout,this,&Viewport::pollResults);
     poll_.start(32);
+    hud_=new QLabel(this);
+    hud_->setObjectName("ModelHud");
+    hud_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    hud_->setStyleSheet("QLabel { background: rgba(20,32,43,220); color: #f1c68f; padding: 8px 12px; border-radius: 4px; font-weight: 600; }");
+    hud_->setFixedHeight(35);
+    help_=new QLabel(this);
+    help_->setObjectName("ModelHelp");
+    help_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    help_->setStyleSheet("QLabel { background: rgba(20,32,43,190); color: #b4c7d5; padding: 5px 12px; border-radius: 4px; }");
+    help_->setFixedHeight(29);
     setTool('v');
+    updateHud();
 }
 Viewport::~Viewport(){
     poll_.stop();
@@ -39,6 +52,7 @@ Viewport::~Viewport(){
 }
 void Viewport::setScene(const Project& document,BuildOptions options){
     document_=document;options_=options;
+    updateHud();
     rebuildAsync();
 }
 void Viewport::setSelection(int i){
@@ -47,15 +61,15 @@ void Viewport::setSelection(int i){
 }
 void Viewport::setTool(char tool){
     if(tool=='v'||tool=='b'||tool=='w'||tool=='e'||tool=='r')activeTool_=tool;
-    update();
+    updateHud();update();
 }
 void Viewport::setAxis(char axis){if(axis=='x'||axis=='y'||axis=='z')activeAxis_=axis;update();}
-void Viewport::setWorkPlane(double y){workPlane_=y;options_.gridY=y;rebuildAsync();update();}
+void Viewport::setWorkPlane(double y){workPlane_=y;options_.gridY=y;updateHud();rebuildAsync();update();}
 void Viewport::setDrawHeight(double height){drawHeight_=std::max(1.0/16.0,height);update();}
-void Viewport::setGridStep(double step){gridStep_=std::clamp(step,1.0/16.0,1.0);update();}
+void Viewport::setGridStep(double step){gridStep_=std::clamp(step,1.0/16.0,1.0);updateHud();update();}
 void Viewport::setCameraPreset(int preset){
     cameraPreset_=std::clamp(preset,0,3);
-    update();
+    updateHud();update();
 }
 
 void Viewport::resetCamera(){
@@ -119,6 +133,24 @@ void main(){
     dirtyGpu_=true;
 }
 void Viewport::resizeGL(int w,int h){Q_UNUSED(w);Q_UNUSED(h);updateCameraMatrices();}
+void Viewport::resizeEvent(QResizeEvent* event){
+    QOpenGLWidget::resizeEvent(event);
+    if(hud_){hud_->move(12,12);hud_->raise();}
+    if(help_){help_->setGeometry(12,std::max(10,height()-42),std::max(50,width()-24),29);help_->raise();}
+}
+void Viewport::updateHud(){
+    if(!hud_||!help_)return;
+    const bool visible=options_.showFormed;
+    hud_->setVisible(visible);help_->setVisible(visible);
+    const QString tool=activeTool_=='b'?"DRAW CUBE":activeTool_=='v'?"SELECT":activeTool_=='w'?"MOVE":activeTool_=='e'?"ROTATE":"RESIZE";
+    const QString camera=cameraPreset_==1?"TOP":cameraPreset_==2?"FRONT":cameraPreset_==3?"RIGHT":"PERSPECTIVE";
+    hud_->setText(QString("MODEL  /  %1    ·    %2    ·    SNAP %3    ·    Y %4")
+        .arg(tool,camera,QString::number(gridStep_,'g',3),QString::number(workPlane_,'f',2)));
+    hud_->adjustSize();
+    help_->setText(activeTool_=='b'?"Click-drag grid: draw cuboid   ·   Scroll: zoom   ·   Right-drag: pan":
+        "Click: select   ·   Drag axis handle: transform   ·   Left-drag empty: orbit");
+}
+
 void Viewport::updateCameraMatrices(){
     const float cp=float(std::cos(pitch_)), sp=float(std::sin(pitch_));
     const float cy=float(std::cos(yaw_)),sy=float(std::sin(yaw_));
@@ -167,6 +199,7 @@ void Viewport::paintGL(){
     drawBuffer(solid_,mesh_.triangles,GL_TRIANGLES);
     drawBuffer(lines_,mesh_.lines,GL_LINES);
     vao_.release();shader_.release();
+    glDisable(GL_DEPTH_TEST); // 2D QPainter overlays must never fail the depth test.
     painter.endNativePainting();
     if(options_.showFormed)drawModelOverlay(painter);
 }
@@ -250,17 +283,6 @@ char Viewport::gizmoAt(const QPoint& screen) const {
 }
 void Viewport::drawModelOverlay(QPainter& painter){
     painter.setRenderHint(QPainter::Antialiasing,true);
-    painter.setFont(QFont("Sans Serif",10));
-    const QString mode=activeTool_=='b'?"DRAW BOX":activeTool_=='v'?"SELECT":activeTool_=='w'?"MOVE":activeTool_=='e'?"ROTATE":"RESIZE";
-    const QString preset=cameraPreset_==1?"TOP":cameraPreset_==2?"FRONT":cameraPreset_==3?"RIGHT":"PERSPECTIVE";
-    painter.fillRect(QRect(12,12,400,38),QColor(18,29,39,210));
-    painter.setPen(QColor(231,198,152));
-    painter.drawText(QRect(24,12,380,38),Qt::AlignVCenter,
-        QString("MODEL  /  %1  ·  %2  ·  SNAP %3").arg(mode,preset,QString::number(gridStep_,'g',3)));
-    painter.setPen(QColor(153,183,198));
-    painter.drawText(QRect(20,height()-36,width()-30,30),Qt::AlignVCenter,
-        activeTool_=='b'?"Left-drag across the workplane to create a cube  ·  Scroll to zoom  ·  Right-drag to pan":
-        "Click a part to select  ·  Drag XYZ handles with Move/Rotate/Resize  ·  Left-drag empty space to orbit");
     if(drawing_ && hasDrawPreview_){
         const Bounds b=drawnCuboid(drawStart_,drawEnd_,workPlane_,drawHeight_,gridStep_);
         const auto a=b.from,c=b.to;
@@ -279,7 +301,6 @@ void Viewport::drawModelOverlay(QPainter& painter){
             const QPointF e=projectPoint(part.pivot+pair.second);
             painter.setPen(QPen(color,pair.first==activeAxis_?4:2));painter.drawLine(p,e);
             painter.setBrush(color);painter.drawEllipse(e,5,5);
-            painter.setPen(QColor("#f7fafc"));painter.drawText(e+QPointF(7,-8),QString(QChar(pair.first).toUpper()));
         }
     }
 }

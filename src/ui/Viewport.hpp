@@ -14,6 +14,8 @@
 #include <atomic>
 
 class QPainter;
+class QLabel;
+class QResizeEvent;
 #include <memory>
 #include <mutex>
 
@@ -46,6 +48,7 @@ protected:
     void initializeGL() override;
     void paintGL() override;
     void resizeGL(int w,int h) override;
+    void resizeEvent(QResizeEvent* event) override;
     void wheelEvent(QWheelEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
@@ -67,6 +70,7 @@ private:
     bool workPlaneAt(const QPoint& screen,Vec3& point) const;
     char gizmoAt(const QPoint& screen) const;
     void drawModelOverlay(QPainter& painter);
+    void updateHud();
 
     Project document_;
     BuildOptions options_;
@@ -80,6 +84,8 @@ private:
     QOpenGLVertexArrayObject vao_;
     QOpenGLBuffer solid_{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer lines_{QOpenGLBuffer::VertexBuffer};
+    QLabel* hud_=nullptr;
+    QLabel* help_=nullptr;
     QMatrix4x4 mvp_;
     QMatrix4x4 view_;
     QMatrix4x4 projection_;
