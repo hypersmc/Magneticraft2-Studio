@@ -22,18 +22,20 @@ endif()
 
 if(NOT STUDIO_HEADLESS_ONLY)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Core Widgets Gui OpenGL OpenGLWidgets)
+    find_package(ZLIB REQUIRED)
     set(CMAKE_AUTOMOC ON)
     add_executable(magneticraft2-studio
         src/main.cpp
         src/io/ProjectIO.hpp src/io/ProjectIO.cpp
         src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
+        src/io/TextureAssets.hpp src/io/TextureAssets.cpp
         src/ui/MainWindow.hpp src/ui/MainWindow.cpp
         src/ui/StartPage.hpp src/ui/StartPage.cpp
         src/ui/Viewport.hpp src/ui/Viewport.cpp
         src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
         src/ui/UvEditor.hpp src/ui/UvEditor.cpp
     )
-    target_link_libraries(magneticraft2-studio PRIVATE studio_core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
+    target_link_libraries(magneticraft2-studio PRIVATE studio_core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets ZLIB::ZLIB)
     install(TARGETS magneticraft2-studio RUNTIME DESTINATION bin)
     install(FILES packaging/magneticraft2-studio.desktop DESTINATION share/applications)
     install(FILES studio-icon.svg DESTINATION share/icons/hicolor/scalable/apps RENAME magneticraft2-studio.svg)
@@ -70,6 +72,12 @@ if(STUDIO_BUILD_TESTS)
         target_link_libraries(studio-import-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-import-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-import-tests COMMAND studio-import-tests)
+        add_executable(studio-texture-assets-tests tests/test_texture_assets.cpp
+            src/io/TextureAssets.cpp src/io/TextureAssets.hpp
+            src/io/BlockModelImport.cpp src/io/BlockModelImport.hpp)
+        target_link_libraries(studio-texture-assets-tests PRIVATE studio_core Qt6::Core Qt6::Gui ZLIB::ZLIB)
+        target_compile_definitions(studio-texture-assets-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+        add_test(NAME studio-texture-assets-tests COMMAND studio-texture-assets-tests)
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
             src/ui/StartPage.hpp src/ui/StartPage.cpp
@@ -77,8 +85,9 @@ if(STUDIO_BUILD_TESTS)
             src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
             src/ui/UvEditor.hpp src/ui/UvEditor.cpp
             src/io/ProjectIO.hpp src/io/ProjectIO.cpp
-            src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp)
+            src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
+            src/io/TextureAssets.hpp src/io/TextureAssets.cpp)
         target_link_libraries(studio-editor-ui-tests PRIVATE studio_core
-            Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test)
+            Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test ZLIB::ZLIB)
     endif()
 endif()

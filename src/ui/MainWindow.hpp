@@ -48,6 +48,9 @@ private:
     void createTextureDock();
     void refreshTexturePanel();
     void importPngTexture();
+    void importMinecraftAssetJar();
+    void importMinecraftAssetFolder();
+    void importTextureSource(const QString& source);
     void applyTextureToCube();
     void applyFaceTexture();
     void setAutoUv();
@@ -118,6 +121,7 @@ private:
     QLineEdit* outlinerSearch_=nullptr;
     QLabel* sceneTitle_=nullptr;
     QLabel* sceneInfo_=nullptr;
+    QLabel* missingAssetsLabel_=nullptr;
     QLabel* projectHeading_=nullptr;
     QLabel* projectContext_=nullptr;
     QLabel* statusMetrics_=nullptr;

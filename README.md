@@ -174,3 +174,27 @@ The Java block-model exporter supports axis-aligned boxes and permitted
 single-axis 22.5°/45° element rotations. If a face requires more than one
 texture tile, it rejects the export rather than silently stretching pixels;
 create an appropriate manual UV mapping first.
+
+## Accurate Minecraft texture resources (texture-source import)
+
+A Java block-model JSON names resource locations such as
+`minecraft:block/stripped_spruce_log`; it does **not** contain that PNG.
+To preview the real materials, open the reference model and choose **File →
+Load Minecraft asset JAR / resource-pack ZIP...** or use **Textures / UV →
+Load Minecraft assets (.jar / .zip)...**. Choose your local Minecraft 1.20.1
+client `.jar`, a resource-pack `.zip`, or an unpacked `assets` folder. Studio
+reads only the PNGs referenced by the model, embeds them into your private
+`.mcraftstudio.json`, and never downloads assets from the internet.
+
+Missing resources are listed in the Texture/UV panel and rendered in a visible
+magenta checkerboard. New cuboids without resource IDs still use explicitly
+procedural preview materials. Previously, the editor silently rendered a
+plausible-looking substitute for missing named textures; that did not match the
+game. UVs from imported JSON are preserved, and the GPU uses nearest-neighbor
+sampling. Real Minecraft lighting and biome tinting are not reproduced yet.
+
+**The reference Ore Washer is still its 66-piece static baked body.** The
+rotating drum, large and small pulleys, leather belt, biome-tinted water, and
+moving items come from the mod's separate BlockEntityRenderer and are not
+reconstructed merely by loading the static JSON. Do not mistake the static
+preview for a complete in-game rendering.

@@ -267,10 +267,19 @@ static QImage fallbackPixelArt(const std::string& material){
     }
     return image;
 }
+// Never imply that a procedurally generated wood/copper texture is an
+// accurate replacement for an unresolved Minecraft resource location.
+static QImage missingResourceChecker(){
+    QImage image(16,16,QImage::Format_RGBA8888);
+    const QColor magenta(240,37,202),dark(33,14,43);
+    for(int y=0;y<16;y++)for(int x=0;x<16;x++)
+        image.setPixelColor(x,y,((x/4+y/4)%2)==0?magenta:dark);
+    return image;
+}
 QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& material){
     const auto source=document_.textures.find(id);
     const bool embedded=!id.empty()&&source!=document_.textures.end();
-    const std::string key=embedded?id:"__fallback/"+material;
+    const std::string key=embedded?id:(id.empty()?"__fallback/"+material:"__missing/"+id);
     auto found=textureCache_.find(key);
     // IDs are immutable while editing. Cache invalidation happens explicitly
     // on project reload / undo. Avoid hashing megabytes of PNG per face/frame.
@@ -281,7 +290,7 @@ QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& ma
         image=QImage::fromData(bytes,"PNG");
         if(image.width()>4096||image.height()>4096)image=QImage();
     }
-    if(image.isNull())image=fallbackPixelArt(material);
+    if(image.isNull())image=id.empty()?fallbackPixelArt(material):missingResourceChecker();
     // OpenGL UV origin is bottom-left; the editor's UV coordinates are top-left.
     image=image.convertToFormat(QImage::Format_RGBA8888).mirrored(false,true);
     auto gpu=std::make_unique<QOpenGLTexture>(image,QOpenGLTexture::DontGenerateMipMaps);

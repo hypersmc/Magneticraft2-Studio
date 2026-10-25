@@ -5,6 +5,7 @@
 #include "StartPage.hpp"
 #include "io/ProjectIO.hpp"
 #include "io/BlockModelImport.hpp"
+#include "io/TextureAssets.hpp"
 #include "core/Modeling.hpp"
 
 #include <QAction>
@@ -327,6 +328,21 @@ void MainWindow::createTextureDock(){
     auto* panel=new QWidget(textureDock_);
     auto* layout=new QVBoxLayout(panel);
     layout->setContentsMargins(10,10,10,10);
+    auto* sourceJar=new QPushButton("Load Minecraft assets (.jar / .zip)...",panel);
+    sourceJar->setObjectName("ImportMinecraftAssetsButton");
+    sourceJar->setToolTip("Import only model-referenced PNGs from your local Minecraft client JAR or resource-pack ZIP");
+    layout->addWidget(sourceJar);
+    auto* sourceDir=new QPushButton("Load unpacked assets folder...",panel);
+    sourceDir->setObjectName("ImportMinecraftAssetsFolderButton");
+    sourceDir->setToolTip("Read assets/<namespace>/textures/ from an unpacked resource pack or mod");
+    layout->addWidget(sourceDir);
+    missingAssetsLabel_=new QLabel(panel);
+    missingAssetsLabel_->setObjectName("TextureAssetStatus");
+    missingAssetsLabel_->setWordWrap(true);
+    missingAssetsLabel_->setStyleSheet("QLabel { color:#e3af79; padding:6px 4px; }");
+    layout->addWidget(missingAssetsLabel_);
+    connect(sourceJar,&QPushButton::clicked,this,&MainWindow::importMinecraftAssetJar);
+    connect(sourceDir,&QPushButton::clicked,this,&MainWindow::importMinecraftAssetFolder);
     auto* import=new QPushButton("+ Import PNG texture",panel);
     import->setObjectName("ImportPngButton");
     layout->addWidget(import);
@@ -407,6 +423,26 @@ void MainWindow::createTextureDock(){
 }
 void MainWindow::refreshTexturePanel(){
     if(!textureDock_||!uvTexture_||!uvCanvas_)return;
+    // Named resource paths are never silently approximated with material textures.
+    const QStringList needed=referencedTextureIds(project_);
+    const QStringList missing=missingTextureIds(project_);
+    if(missingAssetsLabel_) {
+        if(missing.isEmpty()) {
+            missingAssetsLabel_->setText(needed.isEmpty()
+                ? "No external Minecraft textures are referenced."
+                : QString("All %1 referenced Minecraft PNGs are loaded.").arg(needed.size()));
+            missingAssetsLabel_->setStyleSheet("QLabel { color:#8ac8ad; padding:6px 4px; }");
+        }else {
+            missingAssetsLabel_->setText(QString("%1 missing texture%2. The viewport displays a magenta checker for missing assets, not a substitute.\n%3\nLoad the Minecraft 1.20.1 client JAR or a texture pack to resolve them.")
+                .arg(missing.size()).arg(missing.size()==1?"":"s")
+                .arg(missing.mid(0,4).join("\n")+(missing.size()>4?"\n...":"")));
+            missingAssetsLabel_->setStyleSheet("QLabel { color:#e3af79; padding:6px 4px; }");
+        }
+    }
+    if(missingAssetsLabel_ && project_.notes.find("Static body only")!=std::string::npos){
+        missingAssetsLabel_->setText(missingAssetsLabel_->text()+
+            "\n\nStatic model only: the in-game renderer also draws the rotating drum, pulleys, belt, water and items.");
+    }
     const bool enabled=selected_>=0&&selected_<int(project_.parts.size());
     const int index=std::clamp(uvFace_->currentIndex(),0,5);
     uvFace_->setEnabled(enabled);
@@ -447,8 +483,45 @@ void MainWindow::refreshTexturePanel(){
             cachedUvImage_=QImage::fromData(QByteArray::fromBase64(QByteArray::fromStdString(found->second)),"PNG");
         uvCanvas_->setImage(cachedUvImage_);
     }
-    textureInfo_->setText(cachedUvImage_.isNull()?"No embedded PNG for this face. Viewport shows procedural material texture."
+    textureInfo_->setText(cachedUvImage_.isNull()?"Missing texture: no matching PNG loaded. Choose Minecraft asset JAR or folder above."
         :QString("PNG preview: %1 x %2 px  ·  %3").arg(cachedUvImage_.width()).arg(cachedUvImage_.height()).arg(q(texture)));
+}
+void MainWindow::importMinecraftAssetJar(){
+    const QString file=QFileDialog::getOpenFileName(this,
+        "Choose installed Minecraft client JAR or resource-pack ZIP",{},
+        "Minecraft JAR or resource pack (*.jar *.zip);;All files (*)");
+    if(!file.isEmpty())importTextureSource(file);
+}
+void MainWindow::importMinecraftAssetFolder(){
+    const QString folder=QFileDialog::getExistingDirectory(this,
+        "Choose unpacked assets directory (containing assets/minecraft/textures)");
+    if(!folder.isEmpty())importTextureSource(folder);
+}
+void MainWindow::importTextureSource(const QString& source){
+    Project updated=project_;
+    const auto report=importTextureAssets(updated,source);
+    if(!report.error.isEmpty()){
+        QMessageBox::warning(this,"Could not read Minecraft textures",report.error);return;
+    }
+    if(!report.imported.isEmpty()){
+        snapshot();project_=std::move(updated);
+        uvImageKey_.clear();cachedUvImage_=QImage();
+        viewport_->invalidateTextures();
+        commitChanged();
+    }
+    QString details=QString("Imported %1 PNG%2 from the selected local asset source.\n")
+        .arg(report.imported.size()).arg(report.imported.size()==1?"":"s");
+    if(!report.missing.isEmpty()){
+        details+=QString("\n%1 model texture%2 still missing:\n%3")
+            .arg(report.missing.size()).arg(report.missing.size()==1?"":"s")
+            .arg(report.missing.mid(0,12).join("\n"));
+    }else if(!referencedTextureIds(project_).isEmpty())
+        details+="\nAll referenced model PNGs are now available in this project.";
+    if(!report.warnings.isEmpty())details+="\n\nWarnings:\n"+report.warnings.mid(0,5).join("\n");
+    statusBar()->showMessage(QString("Minecraft assets: %1 imported, %2 missing")
+        .arg(report.imported.size()).arg(report.missing.size()),9000);
+    QMessageBox::information(this,"Texture resource report",details);
+    refreshTexturePanel();
 }
 void MainWindow::importPngTexture(){
     const QString filename=QFileDialog::getOpenFileName(this,"Import texture PNG",{},"PNG images (*.png)");
@@ -534,6 +607,8 @@ void MainWindow::createMenus(){
     examples->addAction("Copper casing (Java block)",this,[this](){openExample("casing");});
     file->addAction("Import Minecraft model JSON...",QKeySequence("Ctrl+I"),this,&MainWindow::importBlockModels);
     file->addAction("Import texture PNG...",this,&MainWindow::importPngTexture);
+    file->addAction("Load Minecraft asset JAR / resource-pack ZIP...",this,&MainWindow::importMinecraftAssetJar);
+    file->addAction("Load unpacked texture assets folder...",this,&MainWindow::importMinecraftAssetFolder);
     file->addSeparator();
     file->addAction("Export project...",this,&MainWindow::exportDialog);
     file->addSeparator();file->addAction("Quit",QKeySequence::Quit,this,&QWidget::close);
@@ -816,7 +891,7 @@ void MainWindow::refreshAll(){
     layerSpinner_->setRange(0,project_.dimensions[1]-1);
     layer_=std::min(layer_,project_.dimensions[1]-1);
     layerSpinner_->setValue(layer_);
-    refreshRolePalette();refreshPartTree();refreshInspector();refreshScene();updateTitle();syncWorkspaceChrome();
+    refreshRolePalette();refreshPartTree();refreshInspector();refreshScene();refreshTexturePanel();updateTitle();syncWorkspaceChrome();
 }
 void MainWindow::setSelected(int index){
     if(index>=int(project_.parts.size())||index<0)index=-1;
@@ -1306,8 +1381,9 @@ bool MainWindow::openOreWasherReference(){
     uvWorkspace_=false;mode_->setCurrentIndex(1);
     activateEditor();refreshAll();viewport_->resetCamera();
     qInfo("Studio: Ore Washer model imported with %lld editable cuboids",static_cast<long long>(result.parts.size()));
-    statusBar()->showMessage(QString("Ore Washer static model imported: %1 editable cuboids; PNG references still need textures")
-            .arg(result.parts.size()),9000);
+    const auto missing=missingTextureIds(project_);
+    statusBar()->showMessage(QString("Ore Washer: %1 static parts, %2 missing PNG assets. The rotating drum, belt, pulleys and water are separate renderer layers.")
+            .arg(result.parts.size()).arg(missing.size()),13000);
     return true;
 }
 void MainWindow::openDialog(){

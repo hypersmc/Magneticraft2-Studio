@@ -73,3 +73,14 @@ Bundled model source references:
 They are copied from the user's `hypersmc/magneticraft2-1.20.x` repository;
 they are not recreated approximations. The dynamic renderer's additional runtime
 transforms remain separate and are **not** inferred by the JSON importer.
+
+### Accurate texture workflow
+
+Import Java model geometry and then load missing resources from an installed
+Minecraft client JAR or unpacked resource pack. Resolve the exact
+`namespace:block/path` to `assets/namespace/textures/block/path.png`. Give
+immediate, visible feedback about unresolved references: magenta checker +
+list of missing IDs. Never show an invented spruce/copper material as if it
+were the real texture. Embed only required textures in the editable project.
+This operation must be offline, leave custom PNGs untouched, and not bundle
+Minecraft assets in the public source repository.
