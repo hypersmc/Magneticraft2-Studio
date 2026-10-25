@@ -16,12 +16,20 @@ void UvEditor::setImage(const QImage& image){
     image_=image;update();
 }
 void UvEditor::updateExtent(){
-    const auto extent=[&](double a,double b){return std::clamp(int(std::ceil(std::max({1.0,a,b}))),1,8);};
-    tilesU_=extent(uv_[0],uv_[2]);tilesV_=extent(uv_[1],uv_[3]);
+    double maxU=std::max({1.0,uv_[0],uv_[2]});
+    double maxV=std::max({1.0,uv_[1],uv_[3]});
+    for(const auto& face:overlays_){
+        if(!face.visible)continue;
+        maxU=std::max({maxU,face.uv[0],face.uv[2]});
+        maxV=std::max({maxV,face.uv[1],face.uv[3]});
+    }
+    tilesU_=std::clamp(int(std::ceil(maxU)),1,16);
+    tilesV_=std::clamp(int(std::ceil(maxV)),1,16);
 }
 void UvEditor::setFaceOverlays(const std::array<OverlayFace,6>& faces,int activeFace){
     overlays_=faces;
     activeFace_=activeFace;
+    updateExtent();
     update();
 }
 void UvEditor::setRect(const std::array<double,4>& uv){
