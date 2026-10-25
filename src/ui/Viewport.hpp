@@ -30,6 +30,7 @@ public:
     explicit Viewport(QWidget* parent=nullptr);
     ~Viewport() override;
     void setScene(const Project& p,BuildOptions options);
+    void invalidateTextures(); // Called when switching project or replacing embedded PNG data.
     void resetCamera();
     void setSelection(int index);
     void setAxis(char axis);
@@ -89,6 +90,7 @@ private:
     Geometry mesh_;
     struct CachedTexture { std::size_t signature=0;std::unique_ptr<QOpenGLTexture> gpu; };
     std::map<std::string,CachedTexture> textureCache_;
+    bool texturesDirty_=false;
     bool dirtyGpu_=true;
     bool glReady_=false;
     QOpenGLShaderProgram shader_;

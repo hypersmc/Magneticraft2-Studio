@@ -1,6 +1,7 @@
 #pragma once
 #include "core/Project.hpp"
 #include <QJsonObject>
+#include <QImage>
 #include <QMainWindow>
 #include <QString>
 #include <vector>
@@ -78,6 +79,8 @@ private:
     bool updating_=false;
     bool dragChanged_=false;
     bool uvDragChanged_=false;
+    std::string uvImageKey_;
+    QImage cachedUvImage_;
     std::vector<Project> undo_,redo_;
     int selected_=-1;
     int layer_=0;

@@ -59,9 +59,14 @@ Viewport::~Viewport(){
     }
 }
 void Viewport::setScene(const Project& document,BuildOptions options){
+    if(document_.textures.size()!=document.textures.size())texturesDirty_=true;
     document_=document;options_=options;
     updateHud();
     rebuildAsync();
+}
+void Viewport::invalidateTextures(){
+    texturesDirty_=true;
+    update();
 }
 void Viewport::setSelection(int i){
     options_.selectedPart=i;
@@ -225,9 +230,10 @@ QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& ma
     const auto source=document_.textures.find(id);
     const bool embedded=!id.empty()&&source!=document_.textures.end();
     const std::string key=embedded?id:"__fallback/"+material;
-    const std::size_t signature=embedded?std::hash<std::string>{}(source->second):0;
     auto found=textureCache_.find(key);
-    if(found!=textureCache_.end()&&found->second.signature==signature)return found->second.gpu.get();
+    // IDs are immutable while editing. Cache invalidation happens explicitly
+    // on project reload / undo. Avoid hashing megabytes of PNG per face/frame.
+    if(found!=textureCache_.end())return found->second.gpu.get();
     QImage image;
     if(embedded){
         const QByteArray bytes=QByteArray::fromBase64(QByteArray::fromStdString(source->second));
@@ -243,7 +249,7 @@ QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& ma
     gpu->setMinificationFilter(QOpenGLTexture::Nearest);
     gpu->setMagnificationFilter(QOpenGLTexture::Nearest);
     CachedTexture& cache=textureCache_[key];
-    cache.signature=signature;
+    cache.signature=embedded?source->second.size():0;
     cache.gpu=std::move(gpu);
     return cache.gpu.get();
 }
@@ -256,6 +262,7 @@ void Viewport::paintGL(){
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);glDisable(GL_CULL_FACE);
     updateCameraMatrices();
+    if(texturesDirty_){textureCache_.clear();texturesDirty_=false;}
     uploadBuffers();
     shader_.bind();shader_.setUniformValue("uMvp",mvp_);
     shader_.setUniformValue("uTexture",0);

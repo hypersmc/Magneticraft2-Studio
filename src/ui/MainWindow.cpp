@@ -290,6 +290,7 @@ void MainWindow::refreshTexturePanel(){
     uvTexture_->setEnabled(enabled);
     for(auto* spin:uvNumbers_)spin->setEnabled(enabled);
     if(!enabled){
+        uvImageKey_.clear();cachedUvImage_=QImage();
         uvCanvas_->setEnabled(false);uvCanvas_->setImage({});uvCanvas_->setRect({0,0,1,1});
         textureInfo_->setText("Select a formed-model cuboid to edit its face textures.");
         return;
@@ -304,12 +305,14 @@ void MainWindow::refreshTexturePanel(){
     }
     const auto texture=selectedFace->texture.empty()?part.texture:selectedFace->texture;
     const auto found=project_.textures.find(texture);
-    QImage image;
-    if(found!=project_.textures.end())
-        image=QImage::fromData(QByteArray::fromBase64(QByteArray::fromStdString(found->second)),"PNG");
-    uvCanvas_->setImage(image);
-    textureInfo_->setText(image.isNull()?"No embedded PNG for this face. Viewport shows procedural material texture."
-        :QString("PNG preview: %1 x %2 px  ·  %3").arg(image.width()).arg(image.height()).arg(q(texture)));
+    if(texture!=uvImageKey_){
+        uvImageKey_=texture;cachedUvImage_=QImage();
+        if(found!=project_.textures.end())
+            cachedUvImage_=QImage::fromData(QByteArray::fromBase64(QByteArray::fromStdString(found->second)),"PNG");
+        uvCanvas_->setImage(cachedUvImage_);
+    }
+    textureInfo_->setText(cachedUvImage_.isNull()?"No embedded PNG for this face. Viewport shows procedural material texture."
+        :QString("PNG preview: %1 x %2 px  ·  %3").arg(cachedUvImage_.width()).arg(cachedUvImage_.height()).arg(q(texture)));
 }
 void MainWindow::importPngTexture(){
     const QString filename=QFileDialog::getOpenFileName(this,"Import texture PNG",{},"PNG images (*.png)");
@@ -326,6 +329,9 @@ void MainWindow::importPngTexture(){
     QString id="textures/"+q(slugify(QFileInfo(filename).completeBaseName().toStdString()))+".png";
     const QString base=id;int suffix=2;
     while(project_.textures.count(id.toStdString()))id=base.left(base.size()-4)+"_"+QString::number(suffix++)+".png";
+    std::size_t totalSize=std::size_t(bytes.size());
+    for(const auto& [key,old]:project_.textures){Q_UNUSED(key);totalSize+=old.size()*3/4;}
+    if(totalSize>36*1024*1024){QMessageBox::warning(this,"Texture budget exceeded", "Embedded PNGs are limited to 36 MiB per project.");return;}
     snapshot();project_.textures[id.toStdString()]=bytes.toBase64().toStdString();
     if(selected_>=0&&selected_<int(project_.parts.size()))
         project_.parts[std::size_t(selected_)].texture=id.toStdString();
@@ -592,12 +598,14 @@ void MainWindow::commitChanged(){dirty_=true;refreshAll();}
 void MainWindow::undo(){
     if(undo_.empty())return;
     redo_.push_back(project_);project_=std::move(undo_.back());undo_.pop_back();
+    uvImageKey_.clear();viewport_->invalidateTextures();
     if(selected_>=int(project_.parts.size()))selected_=-1;
     commitChanged();
 }
 void MainWindow::redo(){
     if(redo_.empty())return;
     undo_.push_back(project_);project_=std::move(redo_.back());redo_.pop_back();
+    uvImageKey_.clear();viewport_->invalidateTextures();
     if(selected_>=int(project_.parts.size()))selected_=-1;
     commitChanged();
 }
@@ -729,6 +737,7 @@ void MainWindow::createNew(){
     if(!maybeSave())return;
     QString name="New Multiblock";Dimensions dims{7,5,9};
     if(!sizeDialog(this,"New Multiblock",name,dims,true))return;
+    uvImageKey_.clear();viewport_->invalidateTextures();
     project_=makeProject(name.toStdString(),dims);
     mode_->setCurrentIndex(0);
     dirty_=false;filename_.clear();loadedJson_={};selected_=-1;undo_.clear();redo_.clear();layer_=0;
@@ -750,6 +759,7 @@ void MainWindow::openPath(const QString& path){
     if(!ProjectIO::read(path,result,error)){
         QMessageBox::warning(this,"Cannot open project",error);return;
     }
+    uvImageKey_.clear();viewport_->invalidateTextures();
     project_=std::move(result.project);loadedJson_=std::move(result.original);
     mode_->setCurrentIndex(project_.parts.empty()?0:1);
     selected_=-1;layer_=0;filename_=result.fromLegacy ? QString() : path;dirty_=false;undo_.clear();redo_.clear();
