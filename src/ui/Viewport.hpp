@@ -24,7 +24,9 @@ class QResizeEvent;
 
 namespace studio {
 
+class GizmoOverlay;
 class Viewport final : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core {
+    friend class GizmoOverlay;
     Q_OBJECT
 public:
     explicit Viewport(QWidget* parent=nullptr);
@@ -97,6 +99,7 @@ private:
     QOpenGLVertexArrayObject vao_;
     QOpenGLBuffer solid_{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer lines_{QOpenGLBuffer::VertexBuffer};
+    GizmoOverlay* overlay_=nullptr;
     QLabel* hud_=nullptr;
     QLabel* help_=nullptr;
     QMatrix4x4 mvp_;

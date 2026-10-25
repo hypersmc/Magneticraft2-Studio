@@ -26,6 +26,26 @@
 
 namespace studio {
 
+// Raster QWidget drawn on top of the composited QOpenGLWidget. This avoids
+// QPainter/OpenGL interop that could drop gizmo arrows in the full desktop
+// window even though grabFramebuffer() captured them in isolated tests.
+class GizmoOverlay final : public QWidget {
+public:
+    explicit GizmoOverlay(Viewport* parent):QWidget(parent),viewport_(parent){
+        setAttribute(Qt::WA_TransparentForMouseEvents,true);
+        setAttribute(Qt::WA_TranslucentBackground,true);
+        setAttribute(Qt::WA_NoSystemBackground,true);
+        setAutoFillBackground(false);
+    }
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        viewport_->drawModelOverlay(painter);
+    }
+private:
+    Viewport* viewport_;
+};
+
 Viewport::Viewport(QWidget* parent):QOpenGLWidget(parent),mailbox_(std::make_shared<MeshMailbox>()) {
     setMinimumSize(350,280);
     setFocusPolicy(Qt::StrongFocus);
@@ -43,6 +63,9 @@ Viewport::Viewport(QWidget* parent):QOpenGLWidget(parent),mailbox_(std::make_sha
     help_->setAttribute(Qt::WA_TransparentForMouseEvents);
     help_->setStyleSheet("QLabel { background: rgba(20,32,43,190); color: #b4c7d5; padding: 5px 12px; border-radius: 4px; }");
     help_->setFixedHeight(29);
+    overlay_=new GizmoOverlay(this);
+    overlay_->setGeometry(rect());
+    overlay_->raise();hud_->raise();help_->raise();
     setTool('v');
     updateHud();
 }
@@ -155,6 +178,7 @@ void main(){
 void Viewport::resizeGL(int w,int h){Q_UNUSED(w);Q_UNUSED(h);updateCameraMatrices();}
 void Viewport::resizeEvent(QResizeEvent* event){
     QOpenGLWidget::resizeEvent(event);
+    if(overlay_){overlay_->setGeometry(rect());overlay_->raise();}
     if(hud_){hud_->move(12,12);hud_->raise();}
     if(help_){help_->setGeometry(12,std::max(10,height()-42),std::max(50,width()-24),29);help_->raise();}
 }
@@ -162,6 +186,7 @@ void Viewport::updateHud(){
     if(!hud_||!help_)return;
     const bool visible=options_.showFormed;
     hud_->setVisible(visible);help_->setVisible(visible);
+    if(overlay_)overlay_->setVisible(visible);
     const QString tool=activeTool_=='b'?"DRAW CUBE":activeTool_=='v'?"SELECT":activeTool_=='w'?"MOVE":activeTool_=='e'?"ROTATE":"RESIZE";
     const QString camera=cameraPreset_==1?"TOP":cameraPreset_==2?"FRONT":cameraPreset_==3?"RIGHT":"PERSPECTIVE";
     hud_->setText(QString("MODEL  /  %1    ·    %2    ·    SNAP %3    ·    Y %4")
@@ -255,8 +280,6 @@ QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& ma
 }
 void Viewport::paintGL(){
     if(!glReady_) {glClearColor(0.075f,0.11f,0.14f,1);glClear(GL_COLOR_BUFFER_BIT);return;}
-    QPainter painter(this);
-    painter.beginNativePainting();
     glViewport(0,0,int(width()*devicePixelRatioF()),int(height()*devicePixelRatioF()));
     glClearColor(0.055f,0.089f,0.118f,1);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
@@ -286,9 +309,9 @@ void Viewport::paintGL(){
     }
     drawBuffer(lines_,mesh_.lines,GL_LINES);
     vao_.release();shader_.release();
-    glDisable(GL_DEPTH_TEST); // 2D QPainter overlays must never fail the depth test.
-    painter.endNativePainting();
-    if(options_.showFormed)drawModelOverlay(painter);
+    glDisable(GL_DEPTH_TEST);
+    // Child QWidget composites with the rest of the native desktop UI.
+    if(overlay_&&options_.showFormed)overlay_->update();
 }
 void Viewport::wheelEvent(QWheelEvent* e){
     distance_=std::clamp(distance_*std::exp(-e->angleDelta().y()*0.001),1.2,1800.0);
