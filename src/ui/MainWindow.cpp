@@ -67,6 +67,8 @@ MainWindow::MainWindow(QWidget* parent):QMainWindow(parent),project_(makeDemo())
     for(int i=0;i<int(project_.parts.size());i++) {
         if(project_.parts[std::size_t(i)].name=="Drum") { selected_=i;break; }
     }
+    // Show the real manipulation handles in the bundled demo from startup.
+    tool_->setCurrentIndex(tool_->findData(int('w')));
     QSettings pref;
     const QByteArray geometry=pref.value("window/geometry").toByteArray();
     if(!geometry.isEmpty())restoreGeometry(geometry);

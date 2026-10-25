@@ -35,7 +35,7 @@ Save and reopen the `.mcraftstudio.json` project to verify it persists.
 Install build dependencies:
 
 ```bash
-sudo pacman -S --needed base-devel cmake qt6-base
+sudo pacman -S --needed base-devel cmake qt6-base qt6-wayland
 ```
 
 Then, from this repository:
@@ -137,7 +137,7 @@ The UI and Forge exporter are separate from the project/geometry layer. A later 
 
 ## v0.4 native editing: gizmos and PNG / UV mapping
 
-The **Model** workspace has interactive RGB move/rotate/resize handles.
+The **Model** workspace opens its bundled demo with the Move gizmo already selected, making the RGB arrows immediately draggable. It also has interactive move/rotate/resize handles.
 - W **Move**: drag red/green/blue axis arrows; drag a tinted plane square for XY/XZ/YZ; drag the **white center** to move freely in a camera-facing plane.
 - E **Rotate**: drag the colored X/Y/Z rings, 5-degree snapping.
 - R **Resize**: drag the colored square handles for one dimension, or the **white center** for all dimensions; snapped to your selected grid.

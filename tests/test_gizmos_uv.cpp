@@ -1,6 +1,9 @@
 #include "ui/Viewport.hpp"
 #include "ui/UvEditor.hpp"
 #include <QApplication>
+#include <QImage>
+#include <QBuffer>
+#include <QColor>
 #include <QSignalSpy>
 #include <QSurfaceFormat>
 #include <QtTest/QTest>
@@ -43,6 +46,20 @@ int main(int argc,char** argv) {
         if(axis=='x'||axis=='z')movedHorizontal=true;
     }
     if(!movedHorizontal)return 5;
+    // Import a real PNG into the model, then exercise its GPU texture path.
+    QImage pixels(16,16,QImage::Format_RGBA8888);
+    for(int y=0;y<16;y++)for(int x=0;x<16;x++)
+        pixels.setPixelColor(x,y,((x/4+y/4)%2)?QColor("#da6541"):QColor("#55ca84"));
+    QByteArray png;QBuffer pngStream(&png);pngStream.open(QIODevice::WriteOnly);
+    if(!pixels.save(&pngStream,"PNG"))return 9;
+    project.textures["textures/qa_checker.png"]=png.toBase64().toStdString();
+    project.parts.front().texture="textures/qa_checker.png";
+    viewport.invalidateTextures();viewport.setScene(project,options);
+    viewport.setTool('w');
+    QTest::qWait(300);
+    const QImage textured=viewport.grabFramebuffer();
+    if(textured.isNull())return 10;
+    if(argc>1 && !textured.save(QString::fromLocal8Bit(argv[1])))return 11;
     viewport.close();
     // Dragging inside the UV selection modifies tile coordinates at pixel precision.
     studio::UvEditor uv;

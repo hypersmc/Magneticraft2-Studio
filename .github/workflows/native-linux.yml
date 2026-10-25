@@ -24,7 +24,7 @@ jobs:
       - name: Native Model workspace drawing interaction test
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-model-ui-tests build/studio-model-draw.png
       - name: Native transform gizmo and UV editor interaction test
-        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-gizmos-uv-tests
+        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-gizmos-uv-tests build/studio-textured.png
       - name: Preserve GUI preview
         uses: actions/upload-artifact@v4
         with:
@@ -32,3 +32,4 @@ jobs:
           path: |
             build/studio-native.png
             build/studio-model-draw.png
+            build/studio-textured.png
