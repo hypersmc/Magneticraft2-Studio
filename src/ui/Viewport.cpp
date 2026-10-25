@@ -116,7 +116,10 @@ void Viewport::resetCamera(){
     const auto& d=document_.dimensions;
     target_={d[0]*0.5f,d[1]*0.5f,d[2]*0.5f};
     const double diagonal=std::sqrt(double(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]));
-    distance_=std::max(5.0,diagonal*1.5);
+    const double aspect=std::max(0.2,double(std::max(1,width()))/std::max(1,height()));
+    const double spread=cameraPreset_==0 ? std::tan(46.0*3.14159265358979323846/360.0) : 0.55;
+    const double fit=(diagonal*0.5)/(spread*aspect)*1.18;
+    distance_=std::max({5.0,diagonal*1.5,fit});
     yaw_=0.7;pitch_=0.55;update();
 }
 void Viewport::focusSelected(){
