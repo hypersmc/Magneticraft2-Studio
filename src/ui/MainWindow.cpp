@@ -21,6 +21,8 @@
 #include <QImageReader>
 #include <QFileInfo>
 #include <QTimer>
+#include <QDebug>
+#include <QCoreApplication>
 #include <QPushButton>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -36,6 +38,8 @@
 #include <QApplication>
 #include <QFileInfo>
 #include <QTimer>
+#include <QDebug>
+#include <QCoreApplication>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
@@ -1064,22 +1068,28 @@ static QString bundledSample(const QString& relative){
     }
     return {};
 }
-void MainWindow::openOreWasherReference(){
-    if(!maybeSave())return;
+bool MainWindow::openOreWasherReference(){
+    auto fail=[this](const QString& title,const QString& message){
+        if(QCoreApplication::arguments().contains("--smoke"))qCritical().noquote()<<title+": "+message;
+        else QMessageBox::warning(this,title,message);
+        return false;
+    };
+    qInfo("Studio: opening authentic Ore Washer reference");
+    if(!maybeSave())return false;
     const QString structure=bundledSample("mechanical_ore_washer_north.json");
     const QString model=bundledSample("ore_washer_models/mechanical_ore_washer_north.json");
     if(structure.isEmpty()||model.isEmpty()){
-        QMessageBox::warning(this,"Sample files unavailable",
+        return fail("Sample files unavailable",
             "The Ore Washer reference needs the samples/ folder shipped with Studio. "
-            "Run from the repository root or install the CMake sample data.");return;
+            "Run from the repository root or install the CMake sample data.");
     }
     LoadResult structureResult;QString error;
     if(!ProjectIO::read(structure,structureResult,error)){
-        QMessageBox::warning(this,"Cannot open sample",error);return;
+        return fail("Cannot open sample",error);
     }
     QFile modelFile(model);
     if(!modelFile.open(QIODevice::ReadOnly)){
-        QMessageBox::warning(this,"Cannot open sample",modelFile.errorString());return;
+        return fail("Cannot open model",modelFile.errorString());
     }
     auto example=std::move(structureResult.project);
     Vec3 anchor{double(example.dimensions[0]/2),0,double(example.dimensions[2]/2)};
@@ -1088,7 +1098,7 @@ void MainWindow::openOreWasherReference(){
     }}
     const auto result=importBlockModel(modelFile.readAll(),example,"Ore Washer / Static body",anchor);
     if(!result.error.isEmpty()){
-        QMessageBox::warning(this,"Cannot convert sample model",result.error);return;
+        return fail("Cannot convert sample model",result.error);
     }
     for(const auto& part:result.parts)example.parts.push_back(part);
     example.name="Mechanical Ore Washer — Reference";
@@ -1099,8 +1109,10 @@ void MainWindow::openOreWasherReference(){
     filename_.clear();dirty_=true;undo_.clear();redo_.clear();selected_=-1;layer_=0;
     uvWorkspace_=false;mode_->setCurrentIndex(1);
     refreshAll();viewport_->resetCamera();
+    qInfo("Studio: Ore Washer model imported with %lld editable cuboids",static_cast<long long>(result.parts.size()));
     statusBar()->showMessage(QString("Ore Washer static model imported: %1 editable cuboids; PNG references still need textures")
             .arg(result.parts.size()),9000);
+    return true;
 }
 void MainWindow::openDialog(){
     if(!maybeSave())return;

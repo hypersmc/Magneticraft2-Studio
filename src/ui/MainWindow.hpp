@@ -32,7 +32,7 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget* parent=nullptr);
     void openPath(const QString& path);
-    void openOreWasherReference(); // Load bundled actual ore washer geometry for editor evaluation.
+    bool openOreWasherReference(); // Load bundled actual ore washer geometry for editor evaluation.
 protected:
     void closeEvent(QCloseEvent* event) override;
 private:

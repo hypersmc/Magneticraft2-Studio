@@ -54,7 +54,7 @@ int main(int argc,char** argv) {
         else if(argument=="--screenshot" && i+1<argc)screenshot=QString::fromLocal8Bit(argv[++i]);
         else if(QFileInfo::exists(argument))window.openPath(argument);
     }
-    if(sampleWasher)window.openOreWasherReference();
+    if(sampleWasher && !window.openOreWasherReference())return 7;
     window.show();
     if(smoke) {
         QTimer::singleShot(1600,&app,[&](){
