@@ -54,6 +54,12 @@ static QDoubleSpinBox* coordinateSpin(QWidget* parent) {
 MainWindow::MainWindow(QWidget* parent):QMainWindow(parent),project_(makeDemo()) {
     buildUI();
     createMenus();
+    // The bundled demo is a formed model: show its geometry when opening the
+    // application. New empty documents start in Construction mode instead.
+    mode_->setCurrentIndex(1);
+    for(int i=0;i<int(project_.parts.size());i++) {
+        if(project_.parts[std::size_t(i)].name=="Drum") { selected_=i;break; }
+    }
     QSettings pref;
     const QByteArray geometry=pref.value("window/geometry").toByteArray();
     if(!geometry.isEmpty())restoreGeometry(geometry);
@@ -430,6 +436,7 @@ void MainWindow::createNew(){
     QString name="New Multiblock";Dimensions dims{7,5,9};
     if(!sizeDialog(this,"New Multiblock",name,dims,true))return;
     project_=makeProject(name.toStdString(),dims);
+    mode_->setCurrentIndex(0);
     dirty_=false;filename_.clear();loadedJson_={};selected_=-1;undo_.clear();redo_.clear();layer_=0;
     refreshAll();viewport_->resetCamera();
 }
@@ -450,6 +457,7 @@ void MainWindow::openPath(const QString& path){
         QMessageBox::warning(this,"Cannot open project",error);return;
     }
     project_=std::move(result.project);loadedJson_=std::move(result.original);
+    mode_->setCurrentIndex(project_.parts.empty()?0:1);
     selected_=-1;layer_=0;filename_=result.fromLegacy ? QString() : path;dirty_=false;undo_.clear();redo_.clear();
     refreshAll();viewport_->resetCamera();
 }
