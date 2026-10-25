@@ -12,6 +12,8 @@
 #include <QTimer>
 
 #include <atomic>
+
+class QPainter;
 #include <memory>
 #include <mutex>
 
@@ -64,7 +66,7 @@ private:
     void drawBuffer(QOpenGLBuffer& buffer, const std::vector<Vertex>& verts,GLenum primitive);
     bool workPlaneAt(const QPoint& screen,Vec3& point) const;
     char gizmoAt(const QPoint& screen) const;
-    void drawModelOverlay();
+    void drawModelOverlay(QPainter& painter);
 
     Project document_;
     BuildOptions options_;

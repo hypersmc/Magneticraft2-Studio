@@ -93,7 +93,7 @@ void MainWindow::buildUI(){
     splitter->addWidget(layerContainer_);splitter->setStretchFactor(0,3);splitter->setStretchFactor(1,1);
     setCentralWidget(splitter);
 
-    auto* objects=new QDockWidget("MODEL OUTLINER  /  GROUPS",this);
+    auto* objects=new QDockWidget("MODEL PARTS",this);
     objects->setObjectName("PartsDock");
     tree_=new QTreeWidget(this);
     tree_->setHeaderHidden(true);

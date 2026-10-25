@@ -154,6 +154,8 @@ void Viewport::uploadBuffers(){
 }
 void Viewport::paintGL(){
     if(!glReady_) {glClearColor(0.075f,0.11f,0.14f,1);glClear(GL_COLOR_BUFFER_BIT);return;}
+    QPainter painter(this);
+    painter.beginNativePainting();
     glViewport(0,0,int(width()*devicePixelRatioF()),int(height()*devicePixelRatioF()));
     glClearColor(0.055f,0.089f,0.118f,1);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
@@ -165,7 +167,8 @@ void Viewport::paintGL(){
     drawBuffer(solid_,mesh_.triangles,GL_TRIANGLES);
     drawBuffer(lines_,mesh_.lines,GL_LINES);
     vao_.release();shader_.release();
-    if(options_.showFormed)drawModelOverlay();
+    painter.endNativePainting();
+    if(options_.showFormed)drawModelOverlay(painter);
 }
 void Viewport::wheelEvent(QWheelEvent* e){
     distance_=std::clamp(distance_*std::exp(-e->angleDelta().y()*0.001),1.2,1800.0);
@@ -245,8 +248,7 @@ char Viewport::gizmoAt(const QPoint& screen) const {
     }
     return best;
 }
-void Viewport::drawModelOverlay(){
-    QPainter painter(this);
+void Viewport::drawModelOverlay(QPainter& painter){
     painter.setRenderHint(QPainter::Antialiasing,true);
     painter.setFont(QFont("Sans Serif",10));
     const QString mode=activeTool_=='b'?"DRAW BOX":activeTool_=='v'?"SELECT":activeTool_=='w'?"MOVE":activeTool_=='e'?"ROTATE":"RESIZE";

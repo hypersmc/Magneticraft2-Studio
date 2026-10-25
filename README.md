@@ -71,7 +71,7 @@ ctest --test-dir build --output-on-failure
 - Import existing Magneticraft2 `structure.layout.layerN` construction files (sample Washer/Sifter files provided). North/east/south/west imported layouts are mapped to the canonical local orientation.
 - Export the four rotated JSON construction layouts plus a manifest in a selected directory. **Formed-model export is not implemented yet.** This is deliberate: writing incomplete formed models would be misleading or break the mod.
 - In-memory undo/redo, unsaved change confirmation, atomic file saving via `QSaveFile` and keyboard shortcuts.
-- Headless C++ geometry tests that can run without Qt, plus Qt-backed JSON round-trip and legacy-import tests.
+- Headless C++ geometry tests that can run without Qt, plus Qt-backed JSON round-trip, legacy-import tests and an Xvfb/Qt mouse-drag test that draws a cube in the OpenGL viewport.
 
 ## How to use
 

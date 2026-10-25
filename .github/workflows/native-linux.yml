@@ -21,8 +21,12 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Native GUI startup smoke test (software OpenGL)
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --smoke --screenshot build/studio-native.png
+      - name: Native Model workspace drawing interaction test
+        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-model-ui-tests build/studio-model-draw.png
       - name: Preserve GUI preview
         uses: actions/upload-artifact@v4
         with:
           name: magneticraft2-studio-native-preview
-          path: build/studio-native.png
+          path: |
+            build/studio-native.png
+            build/studio-model-draw.png
