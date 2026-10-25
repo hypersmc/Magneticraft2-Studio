@@ -116,6 +116,19 @@ void Viewport::resetCamera(){
     distance_=std::max(5.0,diagonal*1.5);
     yaw_=0.7;pitch_=0.55;update();
 }
+void Viewport::focusSelected(){
+    if(options_.selectedPart<0 || options_.selectedPart>=int(document_.parts.size())){
+        resetCamera();return;
+    }
+    const Part& part=document_.parts[std::size_t(options_.selectedPart)];
+    if(!validBounds(part.bounds)){resetCamera();return;}
+    const Vec3 center=(part.bounds.from+part.bounds.to)*0.5;
+    const Vec3 diagonal=part.bounds.to-part.bounds.from;
+    const double radius=std::sqrt(diagonal.x*diagonal.x+diagonal.y*diagonal.y+diagonal.z*diagonal.z);
+    target_={float(center.x),float(center.y),float(center.z)};
+    distance_=std::max(2.5,radius*2.0);
+    update();
+}
 void Viewport::rebuildAsync(){
     const auto generation=mailbox_->generation.fetch_add(1)+1;
     const Project snapshot=document_;

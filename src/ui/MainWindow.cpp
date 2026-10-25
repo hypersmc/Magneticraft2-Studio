@@ -3,9 +3,18 @@
 #include "UvEditor.hpp"
 #include "Viewport.hpp"
 #include "io/ProjectIO.hpp"
+#include "io/BlockModelImport.hpp"
 #include "core/Modeling.hpp"
 
 #include <QAction>
+#include <QInputDialog>
+#include <QToolButton>
+#include <QButtonGroup>
+#include <QFile>
+#include <QMenu>
+#include <QTreeWidgetItemIterator>
+#include <QAbstractItemView>
+#include <QSpacerItem>
 #include <QApplication>
 #include <QBuffer>
 #include <QImage>
@@ -21,6 +30,10 @@
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QGridLayout>
+#include <QDir>
+#include <QApplication>
+#include <QFileInfo>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
@@ -67,13 +80,12 @@ MainWindow::MainWindow(QWidget* parent):QMainWindow(parent),project_(makeDemo())
     for(int i=0;i<int(project_.parts.size());i++) {
         if(project_.parts[std::size_t(i)].name=="Drum") { selected_=i;break; }
     }
-    // Show the real manipulation handles in the bundled demo from startup.
     tool_->setCurrentIndex(tool_->findData(int('w')));
     QSettings pref;
-    const QByteArray geometry=pref.value("window/geometry").toByteArray();
+    const QByteArray geometry=pref.value("window/v05/geometry").toByteArray();
     if(!geometry.isEmpty())restoreGeometry(geometry);
-    else resize(1420,900);
-    const QByteArray state=pref.value("window/state").toByteArray();
+    else resize(1600,940);
+    const QByteArray state=pref.value("window/v05/state").toByteArray();
     if(!state.isEmpty())restoreState(state);
     refreshAll();viewport_->resetCamera();
 }
@@ -82,43 +94,129 @@ void MainWindow::buildUI(){
     setDockOptions(QMainWindow::AllowNestedDocks|QMainWindow::AllowTabbedDocks|QMainWindow::AnimatedDocks);
     viewport_=new Viewport(this);
     layers_=new LayerCanvas(this);
-    auto* splitter=new QSplitter(Qt::Vertical,this);
+
+    auto* central=new QFrame(this);
+    central->setObjectName("CentralShell");
+    auto* rootLayout=new QHBoxLayout(central);
+    rootLayout->setContentsMargins(0,0,0,0);rootLayout->setSpacing(0);
+    toolRail_=new QWidget(central);
+    toolRail_->setObjectName("ToolRail");toolRail_->setFixedWidth(86);
+    railLayout_=new QVBoxLayout(toolRail_);
+    railLayout_->setContentsMargins(3,10,3,8);railLayout_->setSpacing(1);
+    auto* railTitle=new QLabel("TOOLS",toolRail_);
+    railTitle->setObjectName("MicroLabel");railTitle->setAlignment(Qt::AlignCenter);
+    railLayout_->addWidget(railTitle);
+    railLayout_->addSpacing(7);
+    rootLayout->addWidget(toolRail_);
+
+    auto* canvasShell=new QWidget(central);
+    auto* canvasLayout=new QVBoxLayout(canvasShell);
+    canvasLayout->setContentsMargins(0,0,0,0);canvasLayout->setSpacing(0);
+    auto* sceneHeader=new QFrame(canvasShell);sceneHeader->setObjectName("SceneHeader");
+    auto* sceneRow=new QHBoxLayout(sceneHeader);sceneRow->setContentsMargins(15,8,15,8);sceneRow->setSpacing(9);
+    sceneTitle_=new QLabel("MODEL CANVAS",sceneHeader);
+    sceneTitle_->setObjectName("ContextTitle");sceneRow->addWidget(sceneTitle_);
+    sceneRow->addStretch(1);
+    sceneInfo_=new QLabel("",sceneHeader);sceneInfo_->setObjectName("ContextInfo");
+    sceneRow->addWidget(sceneInfo_);
+    auto* frame=new QPushButton("Frame  F",sceneHeader);
+    frame->setToolTip("Fit entire machine into the viewport (F)");
+    connect(frame,&QPushButton::clicked,viewport_,&Viewport::resetCamera);
+    sceneRow->addWidget(frame);
+    canvasLayout->addWidget(sceneHeader);
+
+    auto* splitter=new QSplitter(Qt::Vertical,canvasShell);
     splitter->setChildrenCollapsible(false);
     splitter->addWidget(viewport_);
-    layerContainer_=new QWidget(this);
+    layerContainer_=new QWidget(canvasShell);
     auto* layerLayout=new QVBoxLayout(layerContainer_);
     layerLayout->setContentsMargins(0,0,0,0);
-    auto* layerToolbar=new QWidget(this);
-    auto* layerRow=new QHBoxLayout(layerToolbar);layerRow->setContentsMargins(12,4,12,4);
-    layerRow->addWidget(new QLabel("CONSTRUCTION LAYER",this));
-    layerSpinner_=new QSpinBox(this);layerSpinner_->setRange(0,project_.dimensions[1]-1);
-    layerSpinner_->setMaximumWidth(85);layerRow->addWidget(layerSpinner_);
+    layerLayout->setSpacing(0);
+    auto* layerToolbar=new QWidget(layerContainer_);
+    auto* layerRow=new QHBoxLayout(layerToolbar);layerRow->setContentsMargins(14,6,14,6);
+    layerRow->addWidget(new QLabel("BUILD LAYER",layerToolbar));
+    layerSpinner_=new QSpinBox(layerToolbar);
+    layerSpinner_->setObjectName("LayerSpinner");layerSpinner_->setRange(0,project_.dimensions[1]-1);
+    layerSpinner_->setMaximumWidth(100);layerRow->addWidget(layerSpinner_);
+    layerRow->addSpacing(12);
+    layerRow->addWidget(new QLabel("PLACE",layerToolbar));
+    role_=new QComboBox(layerToolbar);role_->setMinimumWidth(160);
+    role_->setObjectName("ConstructionBrush");layerRow->addWidget(role_);
     layerRow->addStretch(1);
-    layerRow->addWidget(new QLabel("BRUSH",this));
-    role_=new QComboBox(this);role_->setMinimumWidth(160);layerRow->addWidget(role_);
     layerLayout->addWidget(layerToolbar);
     layerLayout->addWidget(layers_,1);
-    splitter->addWidget(layerContainer_);splitter->setStretchFactor(0,3);splitter->setStretchFactor(1,1);
-    setCentralWidget(splitter);
+    splitter->addWidget(layerContainer_);
+    splitter->setStretchFactor(0,3);splitter->setStretchFactor(1,1);
+    canvasLayout->addWidget(splitter,1);
+    rootLayout->addWidget(canvasShell,1);
+    setCentralWidget(central);
 
-    auto* objects=new QDockWidget("MODEL PARTS",this);
+    auto* objects=new QDockWidget("OUTLINER",this);
     objects->setObjectName("PartsDock");
-    tree_=new QTreeWidget(this);
-    tree_->setHeaderHidden(true);
+    objects->setFeatures(QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
+    auto* hierarchy=new QWidget(objects);
+    auto* hierarchyLayout=new QVBoxLayout(hierarchy);
+    hierarchyLayout->setContentsMargins(8,10,8,8);hierarchyLayout->setSpacing(8);
+    outlinerSearch_=new QLineEdit(hierarchy);
+    outlinerSearch_->setObjectName("OutlinerSearch");
+    outlinerSearch_->setPlaceholderText("Search parts and groups...");
+    outlinerSearch_->setClearButtonEnabled(true);
+    hierarchyLayout->addWidget(outlinerSearch_);
+    tree_=new QTreeWidget(hierarchy);
+    tree_->setObjectName("PartHierarchy");
+    tree_->setHeaderHidden(true);tree_->setIndentation(16);
+    tree_->setUniformRowHeights(true);
     tree_->setSelectionMode(QAbstractItemView::SingleSelection);
-    objects->setWidget(tree_);addDockWidget(Qt::LeftDockWidgetArea,objects);
-    objects->setMinimumWidth(220);
-    auto* inspector=new QDockWidget("PROPERTIES",this);
+    tree_->setContextMenuPolicy(Qt::CustomContextMenu);
+    hierarchyLayout->addWidget(tree_,1);
+    auto* outlinerActions=new QHBoxLayout;
+    outlinerActions->setSpacing(6);
+    auto* create=new QPushButton("+ Cube",hierarchy);
+    create->setObjectName("AddCubeButton");
+    auto* clone=new QPushButton("Duplicate",hierarchy);
+    auto* remove=new QPushButton("Delete",hierarchy);
+    outlinerActions->addWidget(create);outlinerActions->addWidget(clone);outlinerActions->addWidget(remove);
+    hierarchyLayout->addLayout(outlinerActions);
+    objects->setWidget(hierarchy);addDockWidget(Qt::LeftDockWidgetArea,objects);
+    objects->setMinimumWidth(255);
+    connect(create,&QPushButton::clicked,this,&MainWindow::addPart);
+    connect(clone,&QPushButton::clicked,this,&MainWindow::duplicatePart);
+    connect(remove,&QPushButton::clicked,this,&MainWindow::removePart);
+    connect(outlinerSearch_,&QLineEdit::textChanged,this,&MainWindow::filterOutliner);
+    connect(tree_,&QTreeWidget::itemDoubleClicked,this,[this](QTreeWidgetItem* item,int){
+        if(item && item->data(0,Qt::UserRole).toInt()>=0)renameSelected();
+    });
+    connect(tree_,&QWidget::customContextMenuRequested,this,[this](const QPoint& point){
+        auto* item=tree_->itemAt(point);
+        if(!item || item->data(0,Qt::UserRole).toInt()<0)return;
+        const int index=item->data(0,Qt::UserRole).toInt();
+        setSelected(index);
+        QMenu menu(this);
+        menu.addAction("Rename...",this,&MainWindow::renameSelected);
+        menu.addAction("Duplicate",this,&MainWindow::duplicatePart);
+        menu.addAction("Frame selected",viewport_,&Viewport::focusSelected);
+        const bool shown=project_.parts[std::size_t(index)].visible;
+        menu.addAction(shown?"Hide part":"Show part",this,[this,index](){
+            snapshot();project_.parts[std::size_t(index)].visible=!project_.parts[std::size_t(index)].visible;commitChanged();
+        });
+        menu.addSeparator();menu.addAction("Delete",this,&MainWindow::removePart);
+        menu.exec(tree_->viewport()->mapToGlobal(point));
+    });
+
+    auto* inspector=new QDockWidget("OBJECT PROPERTIES",this);
     inspector->setObjectName("PropertiesDock");
     QWidget* container=new QWidget(this);
     auto* scroller=new QScrollArea(this);
     scroller->setWidgetResizable(true);scroller->setFrameShape(QFrame::NoFrame);
     scroller->setWidget(container);
     inspector->setWidget(scroller);addDockWidget(Qt::RightDockWidgetArea,inspector);
-    inspector->setMinimumWidth(250);
-    createInspector();
-    createTextureDock();
-    statusBar()->showMessage("Native GPU viewport  |  Mouse orbit: left-drag empty space  |  Pan: middle-drag  |  Zoom: wheel");
+    inspector->setMinimumWidth(300);
+    createInspector();createTextureDock();
+    if(textureDock_)textureDock_->raise();
+    statusMetrics_=new QLabel(this);
+    statusMetrics_->setObjectName("ProjectContext");
+    statusBar()->addPermanentWidget(statusMetrics_);
+    statusBar()->showMessage("Ready  ·  Orbit: left drag empty space  ·  Pan: middle drag  ·  Zoom: wheel",6000);
 
     connect(role_,&QComboBox::currentTextChanged,layers_,&LayerCanvas::setRole);
     connect(layerSpinner_,QOverload<int>::of(&QSpinBox::valueChanged),this,[this](int n){
@@ -137,8 +235,8 @@ void MainWindow::buildUI(){
     connect(viewport_,&Viewport::boxDrawn,this,&MainWindow::addDrawnBox);
     connect(viewport_,&Viewport::axisPicked,this,[this](char axis){
         if(!axis_)return;
-        const auto index=axis_->findData(int(axis));
-        if(index>=0)axis_->setCurrentIndex(index);
+        const int i=axis_->findData(int(axis));
+        if(i>=0)axis_->setCurrentIndex(i);
     });
     connect(viewport_,&Viewport::cameraPresetChanged,this,[this](int preset){
         if(viewPreset_)viewPreset_->setCurrentIndex(preset);
@@ -160,22 +258,35 @@ void MainWindow::createInspector(){
     form->addRow("Visibility",visible_);
     layout->addWidget(appearance);
     auto* transform=new QGroupBox("TRANSFORM  /  BLOCK UNITS",contents);
-    auto* tf=new QFormLayout(transform);
+    auto* tf=new QGridLayout(transform);
+    tf->setSpacing(6);tf->setContentsMargins(10,16,10,9);
     const char* axes[]={"X","Y","Z"};
     for(int i=0;i<3;i++){
-        from_[i]=coordinateSpin(contents);to_[i]=coordinateSpin(contents);
-        tf->addRow(QString("Min ")+axes[i],from_[i]);tf->addRow(QString("Max ")+axes[i],to_[i]);
+        auto* head=new QLabel(axes[i],transform);head->setObjectName("MicroLabel");
+        head->setAlignment(Qt::AlignCenter);
+        tf->addWidget(head,0,i+1);
     }
-    for(int i=0;i<3;i++){
-        angle_[i]=coordinateSpin(contents);angle_[i]->setRange(-3600,3600);
-        angle_[i]->setSingleStep(5);tf->addRow(QString("Angle ")+axes[i],angle_[i]);
-    }
-    for(int i=0;i<3;i++){
-        pivot_[i]=coordinateSpin(contents);tf->addRow(QString("Pivot ")+axes[i],pivot_[i]);
+    const char* rows[]={"Min","Max","Rotate°","Pivot"};
+    for(int row=0;row<4;row++){
+        auto* label=new QLabel(rows[row],transform);
+        label->setObjectName("MicroLabel");tf->addWidget(label,row+1,0);
+        for(int i=0;i<3;i++){
+            QDoubleSpinBox* spin=coordinateSpin(transform);
+            spin->setMinimumWidth(71);spin->setMaximumWidth(130);
+            if(row==0)from_[i]=spin;
+            if(row==1)to_[i]=spin;
+            if(row==2){angle_[i]=spin;spin->setRange(-3600,3600);spin->setSingleStep(5);}
+            if(row==3)pivot_[i]=spin;
+            tf->addWidget(spin,row+1,i+1);
+        }
     }
     layout->addWidget(transform);
-    auto* help=new QLabel("MODEL TOOLS\nV Select / B Draw cube\nW Move / E Rotate / R Resize\nDrag red, green, blue handles for axes.\nMove: drag plane squares or white center for free motion.\nResize: drag white center for uniform resize.\nTexture & UV panel: import PNG, assign faces and drag UVs.\n1 unit = 16 Minecraft pixels.",contents);
-    help->setWordWrap(true);help->setObjectName("InspectorHelp");layout->addWidget(help);layout->addStretch();
+    auto* help=new QLabel("<b>Direct modeling</b><br>"
+        "Draw a beam on the workplane, then use the gizmo to move, rotate or resize it. "
+        "F frames the full machine; Shift+F focuses the selection.<br><br>"
+        "1 block = 16 Minecraft pixels. Imported textures and face UVs remain editable.",contents);
+    help->setWordWrap(true);help->setObjectName("InspectorHelp");
+    layout->addWidget(help);layout->addStretch(1);
     const auto connectEdit=[this](){
         // Spinboxes use keyboardTracking=false, so user typing a number commits
         // only once rather than generating hundreds of transient undo states.
@@ -203,6 +314,11 @@ void MainWindow::createTextureDock(){
     auto* import=new QPushButton("+ Import PNG texture",panel);
     import->setObjectName("ImportPngButton");
     layout->addWidget(import);
+    auto* fromMinecraft=new QPushButton("Import Java model JSON...",panel);
+    fromMinecraft->setObjectName("ImportMinecraftModelButton");
+    fromMinecraft->setToolTip("Bring existing Minecraft block-model cuboids into the active model workspace");
+    layout->addWidget(fromMinecraft);
+    connect(fromMinecraft,&QPushButton::clicked,this,&MainWindow::importBlockModels);
     connect(import,&QPushButton::clicked,this,&MainWindow::importPngTexture);
     auto* form=new QFormLayout;
     uvFace_=new QComboBox(panel);
@@ -385,111 +501,174 @@ void MainWindow::applyUvNumbers(){
 
 void MainWindow::createMenus(){
     auto* file=menuBar()->addMenu("&File");
-    auto* newAction=file->addAction("New multiblock",QKeySequence::New,this,&MainWindow::createNew);
-    Q_UNUSED(newAction);
-    file->addAction("Open project / legacy JSON...",QKeySequence::Open,this,&MainWindow::openDialog);
+    file->addAction("New multiblock...",QKeySequence::New,this,&MainWindow::createNew);
+    file->addAction("Open Studio project...",QKeySequence::Open,this,&MainWindow::openDialog);
     file->addAction("Save project",QKeySequence::Save,this,&MainWindow::save);
-    file->addAction("Save as...",QKeySequence::SaveAs,this,&MainWindow::saveAs);
+    file->addAction("Save project as...",QKeySequence::SaveAs,this,&MainWindow::saveAs);
     file->addSeparator();
-    file->addAction("Export Forge construction JSONs...",this,&MainWindow::exportDialog);
+    file->addAction("Import Minecraft model JSON...",QKeySequence("Ctrl+I"),this,&MainWindow::importBlockModels);
+    file->addAction("Import texture PNG...",this,&MainWindow::importPngTexture);
+    file->addSeparator();
+    file->addAction("Export construction JSONs...",this,&MainWindow::exportDialog);
     file->addSeparator();file->addAction("Quit",QKeySequence::Quit,this,&QWidget::close);
 
     auto* edit=menuBar()->addMenu("&Edit");
     undoAction_=edit->addAction("Undo",QKeySequence::Undo,this,&MainWindow::undo);
     redoAction_=edit->addAction("Redo",QKeySequence::Redo,this,&MainWindow::redo);
     edit->addSeparator();
-    edit->addAction("Add cuboid",QKeySequence("Ctrl+Shift+N"),this,&MainWindow::addPart);
+    auto* add=edit->addMenu("Add primitive");
+    for(const QString name:{"Cube", "Timber beam", "Frame post", "Metal plate", "Drive shaft"})
+        add->addAction(name,this,[this,name](){addPrimitive(name);});
     edit->addAction("Duplicate selected",QKeySequence("Ctrl+D"),this,&MainWindow::duplicatePart);
+    edit->addAction("Rename selected",QKeySequence("F2"),this,&MainWindow::renameSelected);
     edit->addAction("Delete selected",QKeySequence::Delete,this,&MainWindow::removePart);
-    edit->addAction("Resize structure...",this,&MainWindow::resizeDocument);
+    edit->addSeparator();
+    edit->addAction("Resize construction layout...",this,&MainWindow::resizeDocument);
 
     auto* view=menuBar()->addMenu("&View");
-    view->addAction("Fit entire structure",QKeySequence("F"),viewport_,&Viewport::resetCamera);
-    auto* textures=menuBar()->addMenu("&Textures");
-    textures->addAction("Import PNG...",this,&MainWindow::importPngTexture);
-    textures->addAction("Apply selected texture to whole cube",this,&MainWindow::applyTextureToCube);
+    view->addAction("Frame entire structure",QKeySequence("F"),viewport_,&Viewport::resetCamera);
+    view->addAction("Frame selected part",QKeySequence("Shift+F"),viewport_,&Viewport::focusSelected);
+    view->addSeparator();
+    view->addAction("Reset workspace layout",this,&MainWindow::resetWorkspaceLayout);
     auto* help=menuBar()->addMenu("&Help");
     help->addAction("About Magneticraft2 Studio",this,[this](){
-        QMessageBox::about(this,"Magneticraft2 Studio", "<b>Magneticraft2 Studio — Native Linux Model Workspace v0.4</b><br>"
-            "C++17 + Qt 6 + OpenGL 3.3 Core<br><br>"
-            "Dedicated 3D model workspace with direct cube drawing, grid snapping, views and Studio v1 save/load.<br>"
-            "<b>Not yet:</b> animated mechanical rigs, full Blockbench editing parity or mod-side tiled rendering.");
+        QMessageBox::about(this,"Magneticraft2 Studio",
+            "<b>Magneticraft2 Studio — Linux Editor v0.5</b><br><br>"
+            "Native Qt 6/C++ modeling with OpenGL 3.3 and editable Java block model imports.<br>"
+            "Construction and model workspaces share a saved Studio document.<br><br>"
+            "Still in development: animation rigging, texture painting, parent-model resolution and Forge formed rendering.");
     });
 
-    auto* toolbar=addToolBar("Modeling");toolbar->setObjectName("ModelToolbar");
-    toolbar->setMovable(false);
-    toolbar->addAction("New",this,&MainWindow::createNew);
-    toolbar->addAction("Open",this,&MainWindow::openDialog);
-    toolbar->addAction("Save",this,&MainWindow::save);
-    toolbar->addSeparator();
-    toolbar->addAction("+ Box",this,&MainWindow::addPart);
-    toolbar->addAction("Duplicate",this,&MainWindow::duplicatePart);
-    toolbar->addAction("Delete",this,&MainWindow::removePart);
-    toolbar->addSeparator();
-    toolbar->addWidget(new QLabel("  WORKSPACE  ",this));
-    mode_=new QComboBox(this);mode_->addItems({"Construction", "Model"});
-    toolbar->addWidget(mode_);
-    ghost_=new QCheckBox("Ghost structure",this);toolbar->addWidget(ghost_);
-    toolbar->addAction("Fit",viewport_,&Viewport::resetCamera);
-    addToolBarBreak(Qt::TopToolBarArea);
-    modelToolbar_=addToolBar("Model authoring tools");
-    modelToolbar_->setObjectName("ModelAuthoringToolbar");
-    modelToolbar_->setMovable(false);
-    modelToolbar_->addWidget(new QLabel("  MODEL TOOL  ",this));
+    auto* header=addToolBar("Studio header");
+    header->setObjectName("StudioHeader");
+    header->setMovable(false);header->setFloatable(false);
+    auto* brand=new QLabel("◈  MAGNETICRAFT²",this);
+    brand->setObjectName("Brand");header->addWidget(brand);
+    auto* identity=new QWidget(this);
+    auto* identityLayout=new QVBoxLayout(identity);
+    identityLayout->setContentsMargins(6,0,10,0);identityLayout->setSpacing(0);
+    projectHeading_=new QLabel(this);projectHeading_->setObjectName("ProjectHeading");
+    projectContext_=new QLabel(this);projectContext_->setObjectName("ProjectContext");
+    identityLayout->addWidget(projectHeading_);identityLayout->addWidget(projectContext_);
+    header->addWidget(identity);
+    auto* spacer=new QWidget(this);spacer->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
+    header->addWidget(spacer);
+
+    workspaceBuild_=new QToolButton(this);
+    workspaceModel_=new QToolButton(this);
+    workspaceUV_=new QToolButton(this);
+    workspaceBuild_->setObjectName("WorkspaceBuild");
+    workspaceModel_->setObjectName("WorkspaceModel");
+    workspaceUV_->setObjectName("WorkspaceUV");
+    for(auto* button:{workspaceBuild_,workspaceModel_,workspaceUV_}){
+        button->setProperty("workspaceTab",true);button->setCheckable(true);
+        header->addWidget(button);
+    }
+    workspaceBuild_->setText("BUILD");workspaceBuild_->setToolTip("Define the blocks players assemble");
+    workspaceModel_->setText("MODEL");workspaceModel_->setToolTip("Edit the formed machine geometry");
+    workspaceUV_->setText("UV / TEXTURE");workspaceUV_->setToolTip("Edit per-face texture mapping");
+    workspaceBuild_->setAccessibleName("Construction workspace");
+    workspaceModel_->setAccessibleName("Model workspace");
+    workspaceUV_->setAccessibleName("UV and textures workspace");
+    connect(workspaceBuild_,&QToolButton::clicked,this,[this](){uvWorkspace_=false;mode_->setCurrentIndex(0);syncWorkspaceChrome();});
+    connect(workspaceModel_,&QToolButton::clicked,this,[this](){uvWorkspace_=false;mode_->setCurrentIndex(1);if(auto* p=findChild<QDockWidget*>("PropertiesDock"))p->raise();syncWorkspaceChrome();});
+    connect(workspaceUV_,&QToolButton::clicked,this,[this](){uvWorkspace_=true;mode_->setCurrentIndex(1);if(textureDock_)textureDock_->raise();syncWorkspaceChrome();});
+    header->addSeparator();
+    auto* newButton=new QPushButton("New",this);
+    auto* openButton=new QPushButton("Open",this);
+    auto* saveButton=new QPushButton("Save",this);
+    auto* exportButton=new QPushButton("Export",this);exportButton->setObjectName("PrimaryAction");
+    for(auto* b:{newButton,openButton,saveButton,exportButton})header->addWidget(b);
+    connect(newButton,&QPushButton::clicked,this,&MainWindow::createNew);
+    connect(openButton,&QPushButton::clicked,this,&MainWindow::openDialog);
+    connect(saveButton,&QPushButton::clicked,this,&MainWindow::save);
+    connect(exportButton,&QPushButton::clicked,this,&MainWindow::exportDialog);
+
+    mode_=new QComboBox(this);mode_->addItems({"Construction","Model"});mode_->hide();
+    axis_=new QComboBox(this);axis_->addItem("X",int('x'));axis_->addItem("Y",int('y'));axis_->addItem("Z",int('z'));axis_->hide();
     tool_=new QComboBox(this);
-    tool_->addItem("V · Select",int('v'));
-    tool_->addItem("B · Draw cube",int('b'));
-    tool_->addItem("W · Move",int('w'));
-    tool_->addItem("E · Rotate",int('e'));
-    tool_->addItem("R · Resize",int('r'));
-    modelToolbar_->addWidget(tool_);
-    modelToolbar_->addWidget(new QLabel("  AXIS  ",this));
-    axis_=new QComboBox(this);
-    axis_->addItem("X",int('x'));axis_->addItem("Y",int('y'));axis_->addItem("Z",int('z'));
-    modelToolbar_->addWidget(axis_);
-    modelToolbar_->addSeparator();
-    modelToolbar_->addWidget(new QLabel("  SNAP  ",this));
-    snap_=new QComboBox(this);
-    snap_->addItem("1/16",1.0/16.0);
-    snap_->addItem("1/8",1.0/8.0);
-    snap_->addItem("1/4",1.0/4.0);
-    snap_->addItem("1/2",1.0/2.0);
-    snap_->addItem("1",1.0);
+    tool_->setObjectName("ModelToolSelect");
+    tool_->addItem("Select",int('v'));
+    tool_->addItem("Draw cube",int('b'));
+    tool_->addItem("Move",int('w'));
+    tool_->addItem("Rotate",int('e'));
+    tool_->addItem("Resize",int('r'));
+    tool_->hide();
+
+    const struct {char shortcut;const char* glyph;const char* label;} tools[] = {
+        {'v',"◈","Select"}, {'b',"▣","Draw"}, {'w',"✥","Move"}, {'e',"⟳","Rotate"}, {'r',"⤢","Resize"}
+    };
+    for(const auto& spec:tools){
+        auto* button=new QToolButton(toolRail_);
+        button->setObjectName(QString("Tool%1").arg(spec.label));
+        button->setProperty("editorTool",true);button->setCheckable(true);
+        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button->setText(QString("%1\n%2").arg(QString::fromUtf8(spec.glyph),QString::fromLatin1(spec.label)));
+        button->setToolTip(QString("%1  (%2)").arg(spec.label).arg(QChar(spec.shortcut).toUpper()));
+        button->setAccessibleName(QString(spec.label)+" tool");
+        button->setFixedHeight(65);
+        railLayout_->addWidget(button);
+        railButtons_[spec.shortcut]=button;
+        connect(button,&QToolButton::clicked,this,[this,spec](){
+            const int index=tool_->findData(int(spec.shortcut));
+            if(index>=0)tool_->setCurrentIndex(index);
+            else syncWorkspaceChrome();
+            viewport_->setFocus();
+        });
+    }
+    railLayout_->addStretch(1);
+    auto* railHint=new QLabel("V B W\nE R",toolRail_);
+    railHint->setAlignment(Qt::AlignCenter);railHint->setObjectName("MicroLabel");
+    railLayout_->addWidget(railHint);
+
+    modelToolbar_=addToolBar("Modeling context");
+    modelToolbar_->setObjectName("ModelAuthoringToolbar");
+    modelToolbar_->setMovable(false);modelToolbar_->setFloatable(false);
+    modelToolbar_->addWidget(new QLabel("SNAP",this));
+    snap_=new QComboBox(this);snap_->setObjectName("SnapSelect");
+    snap_->addItem("1 px   ·   1/16",1.0/16.0);
+    snap_->addItem("2 px   ·   1/8",1.0/8.0);
+    snap_->addItem("4 px   ·   1/4",1.0/4.0);
+    snap_->addItem("8 px   ·   1/2",1.0/2.0);
+    snap_->addItem("16 px   ·   1 block",1.0);
     modelToolbar_->addWidget(snap_);
-    modelToolbar_->addWidget(new QLabel("  PLANE Y  ",this));
-    workPlane_=coordinateSpin(this);workPlane_->setValue(0);workPlane_->setMaximumWidth(94);
-    modelToolbar_->addWidget(workPlane_);
-    modelToolbar_->addWidget(new QLabel("  HEIGHT  ",this));
-    drawHeight_=coordinateSpin(this);drawHeight_->setRange(1.0/16.0,128);drawHeight_->setValue(1.0);
-    drawHeight_->setMaximumWidth(94);modelToolbar_->addWidget(drawHeight_);
     modelToolbar_->addSeparator();
-    modelToolbar_->addWidget(new QLabel("  VIEW  ",this));
-    viewPreset_=new QComboBox(this);
+    modelToolbar_->addWidget(new QLabel("PLANE Y",this));
+    workPlane_=coordinateSpin(this);workPlane_->setValue(0);workPlane_->setMaximumWidth(93);
+    modelToolbar_->addWidget(workPlane_);
+    modelToolbar_->addWidget(new QLabel("EXTRUDE",this));
+    drawHeight_=coordinateSpin(this);drawHeight_->setRange(1.0/16.0,128);drawHeight_->setValue(1);
+    drawHeight_->setMaximumWidth(93);modelToolbar_->addWidget(drawHeight_);
+    modelToolbar_->addSeparator();
+    modelToolbar_->addWidget(new QLabel("VIEW",this));
+    viewPreset_=new QComboBox(this);viewPreset_->setObjectName("CameraPreset");
     viewPreset_->addItems({"Perspective","Top","Front","Right"});
     modelToolbar_->addWidget(viewPreset_);
+    ghost_=new QCheckBox("Show build guides",this);ghost_->setObjectName("ShowBuildGuides");
+    modelToolbar_->addWidget(ghost_);
     connect(mode_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){switchWorkspace();});
     connect(ghost_,&QCheckBox::toggled,this,[this](bool){refreshScene();});
     connect(tool_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){
         const char t=char(tool_->currentData().toInt());
         viewport_->setTool(t);
-        if(t=='b' && viewPreset_->currentIndex()>=2) viewPreset_->setCurrentIndex(1);
+        if(t=='b' && viewPreset_->currentIndex()>=2)viewPreset_->setCurrentIndex(1);
         drawHeight_->setEnabled(t=='b');
+        syncWorkspaceChrome();
     });
     connect(axis_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){viewport_->setAxis(char(axis_->currentData().toInt()));});
     connect(snap_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){viewport_->setGridStep(snap_->currentData().toDouble());});
     connect(workPlane_,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this](double y){viewport_->setWorkPlane(y);});
     connect(drawHeight_,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this](double h){viewport_->setDrawHeight(h);});
-    connect(viewPreset_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int view){viewport_->setCameraPreset(view);});
+    connect(viewPreset_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int view){viewport_->setCameraPreset(view);syncWorkspaceChrome();});
     viewport_->setTool('v');viewport_->setAxis('x');
-    // Shortcuts apply to the focused viewport; editing text fields never steals them.
-    for(const auto key : {Qt::Key_V,Qt::Key_B,Qt::Key_W,Qt::Key_E,Qt::Key_R,Qt::Key_X,Qt::Key_Y,Qt::Key_Z}) {
+    for(const auto key:{Qt::Key_V,Qt::Key_B,Qt::Key_W,Qt::Key_E,Qt::Key_R,Qt::Key_X,Qt::Key_Y,Qt::Key_Z}){
         auto* shortcut=new QShortcut(QKeySequence(key),viewport_);
         shortcut->setContext(Qt::WidgetShortcut);
         connect(shortcut,&QShortcut::activated,this,[this,key](){
             const char c=char(key);
             if(c=='V'||c=='B'||c=='W'||c=='E'||c=='R'){
                 const char lower=char(c+('a'-'A'));
-                int index=tool_->findData(int(lower));
+                const int index=tool_->findData(int(lower));
                 if(index>=0)tool_->setCurrentIndex(index);
             }else axis_->setCurrentIndex(c=='X'?0:c=='Y'?1:2);
         });
@@ -530,6 +709,7 @@ void MainWindow::refreshPartTree(){
         if(!part.visible)item->setForeground(0,QColor("#667681"));
         if(int(i)==selected_)tree_->setCurrentItem(item);
     }
+    filterOutliner();
 }
 void MainWindow::refreshInspector(){
     updating_=true;
@@ -569,20 +749,28 @@ void MainWindow::refreshScene(){
     view.selectedPart=selected_;
     viewport_->setScene(project_,view);
     layers_->setProject(&project_);layers_->setLayer(layer_);
-    statusBar()->showMessage(QString("%1 x %2 x %3 blocks  |  %4 placed cells  |  %5 formed parts  |  Mesh built on worker thread")
+    const auto detail=QString("%1 × %2 × %3 blocks   /   %4 construction cells   /   %5 model parts")
         .arg(project_.dimensions[0]).arg(project_.dimensions[1]).arg(project_.dimensions[2])
-        .arg(project_.cells.size()).arg(project_.parts.size()));
+        .arg(project_.cells.size()).arg(project_.parts.size());
+    if(statusMetrics_)statusMetrics_->setText(detail+"  ");
+    if(sceneInfo_)sceneInfo_->setText(view.showFormed
+        ? (selected_>=0 && selected_<int(project_.parts.size())
+             ? q(project_.parts[std::size_t(selected_)].name)+"  ·  "+QString::number(project_.parts.size())+" parts"
+             : QString::number(project_.parts.size())+" model parts")
+        : "Layer "+QString::number(layer_+1)+" / "+QString::number(project_.dimensions[1]));
 }
 void MainWindow::updateTitle(){
-    setWindowTitle(QString("%1%2 — Magneticraft2 Studio (Native Linux)")
+    setWindowTitle(QString("%1%2  —  Magneticraft2 Studio")
         .arg(q(project_.name),dirty_?" *":""));
+    if(projectHeading_)projectHeading_->setText(q(project_.name)+(dirty_?"  •":""));
+    if(projectContext_)projectContext_->setText(filename_.isEmpty()?"Unsaved Studio project":"Project  ·  "+QFileInfo(filename_).fileName());
     undoAction_->setEnabled(!undo_.empty());redoAction_->setEnabled(!redo_.empty());
 }
 void MainWindow::refreshAll(){
     layerSpinner_->setRange(0,project_.dimensions[1]-1);
     layer_=std::min(layer_,project_.dimensions[1]-1);
     layerSpinner_->setValue(layer_);
-    refreshRolePalette();refreshPartTree();refreshInspector();refreshScene();updateTitle();
+    refreshRolePalette();refreshPartTree();refreshInspector();refreshScene();updateTitle();syncWorkspaceChrome();
 }
 void MainWindow::setSelected(int index){
     if(index>=int(project_.parts.size())||index<0)index=-1;
@@ -611,16 +799,7 @@ void MainWindow::redo(){
     if(selected_>=int(project_.parts.size()))selected_=-1;
     commitChanged();
 }
-void MainWindow::addPart(){
-    snapshot();
-    const double x=project_.dimensions[0]*0.5;
-    const double z=project_.dimensions[2]*0.5;
-    const double y=workPlane_->value();
-    auto part=makeBox(project_,{{x-0.5,y,z-0.5},{x+0.5,y+drawHeight_->value(),z+0.5}});
-    part.group="Model";part.name="Cube "+std::to_string(project_.parts.size()+1);
-    project_.parts.push_back(part);selected_=int(project_.parts.size()-1);
-    mode_->setCurrentIndex(1);commitChanged();
-}
+void MainWindow::addPart(){addPrimitive("Cube");}
 void MainWindow::addDrawnBox(double x0,double z0,double x1,double z1){
     if(mode_->currentIndex()!=1)return;
     auto bounds=drawnCuboid({x0,0,z0},{x1,0,z1},workPlane_->value(),
@@ -637,16 +816,126 @@ void MainWindow::addDrawnBox(double x0,double z0,double x1,double z1){
     commitChanged();
 }
 void MainWindow::switchWorkspace(){
-    if(!mode_ || !viewport_ || !layerContainer_)return;
+    if(!mode_||!viewport_||!layerContainer_)return;
     const bool isModel=mode_->currentIndex()==1;
+    if(!isModel)uvWorkspace_=false;
     layerContainer_->setVisible(!isModel);
-    tool_->setEnabled(isModel);axis_->setEnabled(isModel);
+    if(toolRail_)toolRail_->setVisible(isModel);
     if(textureDock_)textureDock_->setVisible(isModel);
-    snap_->setEnabled(isModel);workPlane_->setEnabled(isModel);
-    drawHeight_->setEnabled(isModel && tool_->currentData().toInt()==int('b'));
-    ghost_->setEnabled(isModel);
-    modelToolbar_->setVisible(isModel);
+    if(snap_)snap_->setEnabled(isModel);
+    if(workPlane_)workPlane_->setEnabled(isModel);
+    if(drawHeight_)drawHeight_->setEnabled(isModel&&tool_->currentData().toInt()==int('b'));
+    if(ghost_)ghost_->setEnabled(isModel);
+    if(modelToolbar_)modelToolbar_->setVisible(isModel);
+    syncWorkspaceChrome();
     refreshScene();
+}
+void MainWindow::syncWorkspaceChrome(){
+    const bool isModel=mode_&&mode_->currentIndex()==1;
+    if(workspaceBuild_)workspaceBuild_->setChecked(!isModel);
+    if(workspaceModel_)workspaceModel_->setChecked(isModel&&!uvWorkspace_);
+    if(workspaceUV_)workspaceUV_->setChecked(isModel&&uvWorkspace_);
+    if(sceneTitle_)sceneTitle_->setText(isModel?(uvWorkspace_?"MATERIALS  /  UV":"FORMED MODEL  /  3D EDITOR"):
+        "CONSTRUCTION  /  BUILD LAYOUT");
+    if(tool_){
+        const char current=char(tool_->currentData().toInt());
+        for(const auto& [key,button]:railButtons_)if(button)button->setChecked(key==current);
+    }
+}
+void MainWindow::filterOutliner(){
+    if(!tree_ || !outlinerSearch_)return;
+    const QString query=outlinerSearch_->text().trimmed();
+    for(int i=0;i<tree_->topLevelItemCount();++i){
+        auto* group=tree_->topLevelItem(i);
+        const bool matchingGroup=group->text(0).contains(query,Qt::CaseInsensitive);
+        bool visible=false;
+        for(int j=0;j<group->childCount();++j){
+            auto* item=group->child(j);
+            const bool match=query.isEmpty()||matchingGroup||item->text(0).contains(query,Qt::CaseInsensitive);
+            item->setHidden(!match);visible|=match;
+        }
+        group->setHidden(!visible);
+        if(!query.isEmpty()&&visible)group->setExpanded(true);
+    }
+}
+void MainWindow::renameSelected(){
+    if(selected_<0||selected_>=int(project_.parts.size()))return;
+    bool accepted=false;
+    QString value=QInputDialog::getText(this,"Rename model part","Part name",QLineEdit::Normal,
+                                      q(project_.parts[std::size_t(selected_)].name),&accepted).trimmed();
+    if(!accepted||value.isEmpty()||value==q(project_.parts[std::size_t(selected_)].name))return;
+    snapshot();project_.parts[std::size_t(selected_)].name=value.toStdString();commitChanged();
+}
+void MainWindow::addPrimitive(const QString& kind){
+    const double cx=project_.dimensions[0]*0.5,cz=project_.dimensions[2]*0.5;
+    const double y=workPlane_?workPlane_->value():0;
+    Vec3 size{1,1,1};QString material="wood",group="Structure";
+    if(kind=="Timber beam")size={4,.25,.25};
+    else if(kind=="Frame post")size={.25,3,.25};
+    else if(kind=="Metal plate"){size={2,.125,2};material="copper";group="Hardware";}
+    else if(kind=="Drive shaft"){size={3,.1875,.1875};material="iron";group="Motion";}
+    else group="Geometry";
+    Bounds bounds{{cx-size.x*.5,y,cz-size.z*.5},{cx+size.x*.5,y+size.y,cz+size.z*.5}};
+    auto part=makeBox(project_,bounds);
+    part.name=kind.toStdString();part.group=group.toStdString();part.material=material.toStdString();
+    snapshot();project_.parts.push_back(std::move(part));selected_=int(project_.parts.size())-1;
+    uvWorkspace_=false;mode_->setCurrentIndex(1);commitChanged();viewport_->focusSelected();
+}
+void MainWindow::resetWorkspaceLayout(){
+    if(auto* parts=findChild<QDockWidget*>("PartsDock")){
+        addDockWidget(Qt::LeftDockWidgetArea,parts);parts->show();parts->setFloating(false);
+    }
+    auto* props=findChild<QDockWidget*>("PropertiesDock");
+    if(props){addDockWidget(Qt::RightDockWidgetArea,props);props->show();props->setFloating(false);}
+    if(textureDock_){
+        if(props)tabifyDockWidget(props,textureDock_);
+        textureDock_->setFloating(false);
+        textureDock_->setVisible(mode_ && mode_->currentIndex()==1);
+        if(props)props->raise();
+    }
+    resizeDocks({findChild<QDockWidget*>("PartsDock"),props},{255,320},Qt::Horizontal);
+    QSettings pref;pref.remove("window/v05/state");
+}
+void MainWindow::importBlockModels(){
+    const auto files=QFileDialog::getOpenFileNames(this,"Import Minecraft Java block models",{},
+                     "Minecraft models (*.json);;All files (*)");
+    if(files.isEmpty())return;
+    // Import relative to the formation controller, not to the world origin.
+    // This matches how the washer's baked model extends beyond (-16..32) pixels.
+    Vec3 anchor{double(project_.dimensions[0]/2),0,double(project_.dimensions[2]/2)};
+    for(const auto& [cell,role]:project_.cells){
+        if(role=="Controller"){anchor={double(cell.x),double(cell.y),double(cell.z)};break;}
+    }
+    Project draft=project_;
+    QStringList warnings;
+    std::size_t added=0;
+    for(const QString& fileName:files){
+        QFile file(fileName);
+        if(!file.open(QIODevice::ReadOnly)){
+            QMessageBox::warning(this,"Model import failed",fileName+": "+file.errorString());return;
+        }
+        const auto result=importBlockModel(file.readAll(),draft,QFileInfo(fileName).completeBaseName(),anchor);
+        if(!result.error.isEmpty()){
+            QMessageBox::warning(this,"Model import failed",QFileInfo(fileName).fileName()+": "+result.error);return;
+        }
+        if(draft.parts.size()+result.parts.size()>20000){
+            QMessageBox::warning(this,"Too many parts","A Studio project supports up to 20,000 model elements in one import.");return;
+        }
+        added+=result.parts.size();
+        for(const auto& warning:result.warnings)warnings << QFileInfo(fileName).fileName()+": "+warning;
+        for(const auto& part:result.parts)draft.parts.push_back(part);
+    }
+    if(added==0)return;
+    snapshot();project_=std::move(draft);
+    selected_=int(project_.parts.size())-1;
+    uvWorkspace_=false;
+    mode_->setCurrentIndex(1);
+    commitChanged();viewport_->resetCamera();
+    statusBar()->showMessage(QString("Imported %1 editable cuboids into the formed model").arg(added),8000);
+    if(!warnings.isEmpty()){
+        if(warnings.size()>8)warnings=warnings.mid(0,8)+QStringList{"Additional import warnings omitted."};
+        QMessageBox::information(this,"Imported with limitations",warnings.join("\n"));
+    }
 }
 void MainWindow::duplicatePart(){
     if(selected_<0||selected_>=int(project_.parts.size()))return;
@@ -811,7 +1100,7 @@ void MainWindow::exportDialog(){
 void MainWindow::closeEvent(QCloseEvent* event){
     if(!maybeSave()){event->ignore();return;}
     QSettings pref;
-    pref.setValue("window/geometry",saveGeometry());pref.setValue("window/state",saveState());
+    pref.setValue("window/v05/geometry",saveGeometry());pref.setValue("window/v05/state",saveState());
     event->accept();
 }
 

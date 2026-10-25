@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Magneticraft2Studio VERSION 0.4.0 LANGUAGES CXX)
+project(Magneticraft2Studio VERSION 0.5.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -26,6 +26,7 @@ if(NOT STUDIO_HEADLESS_ONLY)
     add_executable(magneticraft2-studio
         src/main.cpp
         src/io/ProjectIO.hpp src/io/ProjectIO.cpp
+        src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
         src/ui/MainWindow.hpp src/ui/MainWindow.cpp
         src/ui/Viewport.hpp src/ui/Viewport.cpp
         src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
@@ -63,5 +64,17 @@ if(STUDIO_BUILD_TESTS)
         target_link_libraries(studio-io-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-io-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-io-tests COMMAND studio-io-tests)
+        add_executable(studio-import-tests tests/test_import.cpp src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp)
+        target_link_libraries(studio-import-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
+        add_test(NAME studio-import-tests COMMAND studio-import-tests)
+        add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
+            src/ui/MainWindow.hpp src/ui/MainWindow.cpp
+            src/ui/Viewport.hpp src/ui/Viewport.cpp
+            src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
+            src/ui/UvEditor.hpp src/ui/UvEditor.cpp
+            src/io/ProjectIO.hpp src/io/ProjectIO.cpp
+            src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp)
+        target_link_libraries(studio-editor-ui-tests PRIVATE studio_core
+            Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test)
     endif()
 endif()

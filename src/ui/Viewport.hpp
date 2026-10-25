@@ -34,6 +34,7 @@ public:
     void setScene(const Project& p,BuildOptions options);
     void invalidateTextures(); // Called when switching project or replacing embedded PNG data.
     void resetCamera();
+    void focusSelected(); // Zoom/orbit around the active cuboid, preserving camera orientation.
     void setSelection(int index);
     void setAxis(char axis);
     void setTool(char tool); // V = Select, B = Draw, W = Move, E = Rotate, R = Resize

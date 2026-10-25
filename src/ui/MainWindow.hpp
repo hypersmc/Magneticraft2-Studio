@@ -5,6 +5,7 @@
 #include <QMainWindow>
 #include <QString>
 #include <vector>
+#include <map>
 
 class QAction;
 class QComboBox;
@@ -18,6 +19,8 @@ class QCloseEvent;
 class QDockWidget;
 class QLabel;
 class QPushButton;
+class QToolButton;
+class QVBoxLayout;
 
 namespace studio {
 class LayerCanvas;
@@ -71,6 +74,12 @@ private:
     void addDrawnBox(double x0,double z0,double x1,double z1);
     void switchWorkspace();
     void commitChanged();
+    void importBlockModels();
+    void filterOutliner();
+    void syncWorkspaceChrome();
+    void resetWorkspaceLayout();
+    void renameSelected();
+    void addPrimitive(const QString& kind);
 
     Project project_;
     QJsonObject loadedJson_;
@@ -85,6 +94,19 @@ private:
     int selected_=-1;
     int layer_=0;
     Viewport* viewport_=nullptr;
+    QWidget* toolRail_=nullptr;
+    QVBoxLayout* railLayout_=nullptr;
+    QLineEdit* outlinerSearch_=nullptr;
+    QLabel* sceneTitle_=nullptr;
+    QLabel* sceneInfo_=nullptr;
+    QLabel* projectHeading_=nullptr;
+    QLabel* projectContext_=nullptr;
+    QLabel* statusMetrics_=nullptr;
+    QToolButton* workspaceBuild_=nullptr;
+    QToolButton* workspaceModel_=nullptr;
+    QToolButton* workspaceUV_=nullptr;
+    std::map<char,QToolButton*> railButtons_;
+    bool uvWorkspace_=false;
     LayerCanvas* layers_=nullptr;
     QWidget* layerContainer_=nullptr;
     QToolBar* modelToolbar_=nullptr;
