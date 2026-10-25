@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Magneticraft2Studio VERSION 0.2.0 LANGUAGES CXX)
+project(Magneticraft2Studio VERSION 0.3.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -10,6 +10,7 @@ option(STUDIO_BUILD_TESTS "Build unit tests" ON)
 add_library(studio_core STATIC
     src/core/Project.hpp src/core/Project.cpp
     src/core/Geometry.hpp src/core/Geometry.cpp
+    src/core/Modeling.hpp src/core/Modeling.cpp
 )
 target_include_directories(studio_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(studio_core PUBLIC cxx_std_17)
@@ -43,6 +44,9 @@ if(STUDIO_BUILD_TESTS)
     add_executable(studio-geometry-tests tests/test_geometry.cpp)
     target_link_libraries(studio-geometry-tests PRIVATE studio_core)
     add_test(NAME studio-geometry-tests COMMAND studio-geometry-tests)
+    add_executable(studio-modeling-tests tests/test_modeling.cpp)
+    target_link_libraries(studio-modeling-tests PRIVATE studio_core)
+    add_test(NAME studio-modeling-tests COMMAND studio-modeling-tests)
     if(NOT STUDIO_HEADLESS_ONLY)
         add_executable(studio-io-tests tests/test_io.cpp src/io/ProjectIO.hpp src/io/ProjectIO.cpp)
         target_link_libraries(studio-io-tests PRIVATE studio_core Qt6::Core)

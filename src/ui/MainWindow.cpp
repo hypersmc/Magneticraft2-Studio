@@ -2,6 +2,7 @@
 #include "LayerCanvas.hpp"
 #include "Viewport.hpp"
 #include "io/ProjectIO.hpp"
+#include "core/Modeling.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -76,8 +77,8 @@ void MainWindow::buildUI(){
     auto* splitter=new QSplitter(Qt::Vertical,this);
     splitter->setChildrenCollapsible(false);
     splitter->addWidget(viewport_);
-    QWidget* layerContainer=new QWidget(this);
-    auto* layerLayout=new QVBoxLayout(layerContainer);
+    layerContainer_=new QWidget(this);
+    auto* layerLayout=new QVBoxLayout(layerContainer_);
     layerLayout->setContentsMargins(0,0,0,0);
     auto* layerToolbar=new QWidget(this);
     auto* layerRow=new QHBoxLayout(layerToolbar);layerRow->setContentsMargins(12,4,12,4);
@@ -89,10 +90,10 @@ void MainWindow::buildUI(){
     role_=new QComboBox(this);role_->setMinimumWidth(160);layerRow->addWidget(role_);
     layerLayout->addWidget(layerToolbar);
     layerLayout->addWidget(layers_,1);
-    splitter->addWidget(layerContainer);splitter->setStretchFactor(0,3);splitter->setStretchFactor(1,1);
+    splitter->addWidget(layerContainer_);splitter->setStretchFactor(0,3);splitter->setStretchFactor(1,1);
     setCentralWidget(splitter);
 
-    auto* objects=new QDockWidget("OUTLINER  /  MODEL PARTS",this);
+    auto* objects=new QDockWidget("MODEL OUTLINER  /  GROUPS",this);
     objects->setObjectName("PartsDock");
     tree_=new QTreeWidget(this);
     tree_->setHeaderHidden(true);
@@ -124,6 +125,15 @@ void MainWindow::buildUI(){
     connect(viewport_,&Viewport::beginEdit,this,[this](){dragChanged_=false;});
     connect(viewport_,&Viewport::deltaEdit,this,&MainWindow::applyTransformDelta);
     connect(viewport_,&Viewport::endEdit,this,[this](){dragChanged_=false;});
+    connect(viewport_,&Viewport::boxDrawn,this,&MainWindow::addDrawnBox);
+    connect(viewport_,&Viewport::axisPicked,this,[this](char axis){
+        if(!axis_)return;
+        const auto index=axis_->findData(int(axis));
+        if(index>=0)axis_->setCurrentIndex(index);
+    });
+    connect(viewport_,&Viewport::cameraPresetChanged,this,[this](int preset){
+        if(viewPreset_)viewPreset_->setCurrentIndex(preset);
+    });
 }
 void MainWindow::createInspector(){
     QWidget* contents=static_cast<QScrollArea*>(findChild<QDockWidget*>("PropertiesDock")->widget())->widget();
@@ -131,11 +141,14 @@ void MainWindow::createInspector(){
     auto* appearance=new QGroupBox("PART",contents);
     auto* form=new QFormLayout(appearance);
     partName_=new QLineEdit(contents);groupName_=new QLineEdit(contents);
+    texture_=new QLineEdit(contents);
+    texture_->setPlaceholderText("magneticraft2:block/texture_name");
     material_=new QComboBox(contents);
     material_->addItems({"wood","copper","stone","iron","dark","glass","water"});
     visible_=new QCheckBox("Show in model",contents);
     form->addRow("Name",partName_);form->addRow("Group",groupName_);
-    form->addRow("Material",material_);form->addRow("Visibility",visible_);
+    form->addRow("Material",material_);form->addRow("Texture ID",texture_);
+    form->addRow("Visibility",visible_);
     layout->addWidget(appearance);
     auto* transform=new QGroupBox("TRANSFORM  /  BLOCK UNITS",contents);
     auto* tf=new QFormLayout(transform);
@@ -152,7 +165,7 @@ void MainWindow::createInspector(){
         pivot_[i]=coordinateSpin(contents);tf->addRow(QString("Pivot ")+axes[i],pivot_[i]);
     }
     layout->addWidget(transform);
-    auto* help=new QLabel("W / E / R: Move, Rotate, Scale\nX / Y / Z: Active axis\n1 unit = 1 Minecraft block\nSnap: 1/16 block",contents);
+    auto* help=new QLabel("MODEL TOOLS\nV Select  /  B Draw cube\nW Move  /  E Rotate  /  R Resize\nX / Y / Z: active handle axis\nLeft-drag workplane to draw new geometry.\n1 unit = 1 Minecraft block (16 pixels).\nTexture ID is saved; textured preview is upcoming.",contents);
     help->setWordWrap(true);help->setObjectName("InspectorHelp");layout->addWidget(help);layout->addStretch();
     const auto connectEdit=[this](){
         // Spinboxes use keyboardTracking=false, so user typing a number commits
@@ -161,6 +174,7 @@ void MainWindow::createInspector(){
     };
     connect(partName_,&QLineEdit::editingFinished,this,connectEdit);
     connect(groupName_,&QLineEdit::editingFinished,this,connectEdit);
+    connect(texture_,&QLineEdit::editingFinished,this,connectEdit);
     connect(material_,&QComboBox::currentTextChanged,this,connectEdit);
     connect(visible_,&QCheckBox::toggled,this,connectEdit);
     for(int i=0;i<3;i++){
@@ -194,10 +208,10 @@ void MainWindow::createMenus(){
     view->addAction("Fit entire structure",QKeySequence("F"),viewport_,&Viewport::resetCamera);
     auto* help=menuBar()->addMenu("&Help");
     help->addAction("About Magneticraft2 Studio",this,[this](){
-        QMessageBox::about(this,"Magneticraft2 Studio", "<b>Magneticraft2 Studio — Native Linux milestone</b><br>"
+        QMessageBox::about(this,"Magneticraft2 Studio", "<b>Magneticraft2 Studio — Native Linux Model Workspace v0.3</b><br>"
             "C++17 + Qt 6 + OpenGL 3.3 Core<br><br>"
-            "Native model editing with layer-based construction and Studio v1 save/load.<br>"
-            "<b>Not yet:</b> textured UV editing, complete animation authoring, or a mod-side tiled model renderer.");
+            "Dedicated 3D model workspace with direct cube drawing, grid snapping, views and Studio v1 save/load.<br>"
+            "<b>Not yet:</b> real textured UV preview, animation authoring, or mod-side tiled rendering.");
     });
 
     auto* toolbar=addToolBar("Modeling");toolbar->setObjectName("ModelToolbar");
@@ -211,34 +225,75 @@ void MainWindow::createMenus(){
     toolbar->addAction("Delete",this,&MainWindow::removePart);
     toolbar->addSeparator();
     toolbar->addWidget(new QLabel("  WORKSPACE  ",this));
-    mode_=new QComboBox(this);mode_->addItems({"Construction", "Formed Model"});
+    mode_=new QComboBox(this);mode_->addItems({"Construction", "Model"});
     toolbar->addWidget(mode_);
     ghost_=new QCheckBox("Ghost structure",this);toolbar->addWidget(ghost_);
-    toolbar->addSeparator();
-    toolbar->addWidget(new QLabel("  TOOL  ",this));
-    tool_=new QComboBox(this);tool_->addItem("W · Move",'w');tool_->addItem("E · Rotate",'e');tool_->addItem("R · Scale",'r');
-    toolbar->addWidget(tool_);
-    toolbar->addWidget(new QLabel("   AXIS  ",this));
-    axis_=new QComboBox(this);axis_->addItem("X",'x');axis_->addItem("Y",'y');axis_->addItem("Z",'z');
-    toolbar->addWidget(axis_);
-    toolbar->addSeparator();
     toolbar->addAction("Fit",viewport_,&Viewport::resetCamera);
-    connect(mode_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){refreshScene();});
+    addToolBarBreak(Qt::TopToolBarArea);
+    modelToolbar_=addToolBar("Model authoring tools");
+    modelToolbar_->setObjectName("ModelAuthoringToolbar");
+    modelToolbar_->setMovable(false);
+    modelToolbar_->addWidget(new QLabel("  MODEL TOOL  ",this));
+    tool_=new QComboBox(this);
+    tool_->addItem("V · Select",int('v'));
+    tool_->addItem("B · Draw cube",int('b'));
+    tool_->addItem("W · Move",int('w'));
+    tool_->addItem("E · Rotate",int('e'));
+    tool_->addItem("R · Resize",int('r'));
+    modelToolbar_->addWidget(tool_);
+    modelToolbar_->addWidget(new QLabel("  AXIS  ",this));
+    axis_=new QComboBox(this);
+    axis_->addItem("X",int('x'));axis_->addItem("Y",int('y'));axis_->addItem("Z",int('z'));
+    modelToolbar_->addWidget(axis_);
+    modelToolbar_->addSeparator();
+    modelToolbar_->addWidget(new QLabel("  SNAP  ",this));
+    snap_=new QComboBox(this);
+    snap_->addItem("1/16",1.0/16.0);
+    snap_->addItem("1/8",1.0/8.0);
+    snap_->addItem("1/4",1.0/4.0);
+    snap_->addItem("1/2",1.0/2.0);
+    snap_->addItem("1",1.0);
+    modelToolbar_->addWidget(snap_);
+    modelToolbar_->addWidget(new QLabel("  PLANE Y  ",this));
+    workPlane_=coordinateSpin(this);workPlane_->setValue(0);workPlane_->setMaximumWidth(94);
+    modelToolbar_->addWidget(workPlane_);
+    modelToolbar_->addWidget(new QLabel("  HEIGHT  ",this));
+    drawHeight_=coordinateSpin(this);drawHeight_->setRange(1.0/16.0,128);drawHeight_->setValue(1.0);
+    drawHeight_->setMaximumWidth(94);modelToolbar_->addWidget(drawHeight_);
+    modelToolbar_->addSeparator();
+    modelToolbar_->addWidget(new QLabel("  VIEW  ",this));
+    viewPreset_=new QComboBox(this);
+    viewPreset_->addItems({"Perspective","Top","Front","Right"});
+    modelToolbar_->addWidget(viewPreset_);
+    connect(mode_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){switchWorkspace();});
     connect(ghost_,&QCheckBox::toggled,this,[this](bool){refreshScene();});
-    connect(tool_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){viewport_->setTool(char(tool_->currentData().toInt()));});
+    connect(tool_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){
+        const char t=char(tool_->currentData().toInt());
+        viewport_->setTool(t);
+        if(t=='b' && viewPreset_->currentIndex()>=2) viewPreset_->setCurrentIndex(1);
+        drawHeight_->setEnabled(t=='b');
+    });
     connect(axis_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){viewport_->setAxis(char(axis_->currentData().toInt()));});
-    viewport_->setTool('w');viewport_->setAxis('x');
-    // These shortcuts activate only when the GPU viewport has keyboard focus.
-    for(const auto key : {Qt::Key_W,Qt::Key_E,Qt::Key_R,Qt::Key_X,Qt::Key_Y,Qt::Key_Z}) {
+    connect(snap_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){viewport_->setGridStep(snap_->currentData().toDouble());});
+    connect(workPlane_,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this](double y){viewport_->setWorkPlane(y);});
+    connect(drawHeight_,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this](double h){viewport_->setDrawHeight(h);});
+    connect(viewPreset_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int view){viewport_->setCameraPreset(view);});
+    viewport_->setTool('v');viewport_->setAxis('x');
+    // Shortcuts apply to the focused viewport; editing text fields never steals them.
+    for(const auto key : {Qt::Key_V,Qt::Key_B,Qt::Key_W,Qt::Key_E,Qt::Key_R,Qt::Key_X,Qt::Key_Y,Qt::Key_Z}) {
         auto* shortcut=new QShortcut(QKeySequence(key),viewport_);
         shortcut->setContext(Qt::WidgetShortcut);
         connect(shortcut,&QShortcut::activated,this,[this,key](){
             const char c=char(key);
-            if(c=='W'||c=='E'||c=='R')tool_->setCurrentIndex(c=='W'?0:c=='E'?1:2);
-            else axis_->setCurrentIndex(c=='X'?0:c=='Y'?1:2);
+            if(c=='V'||c=='B'||c=='W'||c=='E'||c=='R'){
+                const char lower=char(c+('a'-'A'));
+                int index=tool_->findData(int(lower));
+                if(index>=0)tool_->setCurrentIndex(index);
+            }else axis_->setCurrentIndex(c=='X'?0:c=='Y'?1:2);
         });
     }
     undoAction_->setEnabled(false);redoAction_->setEnabled(false);
+    switchWorkspace();
 }
 void MainWindow::refreshRolePalette(){
     const auto previously=role_->currentText();
@@ -254,10 +309,21 @@ void MainWindow::refreshRolePalette(){
 void MainWindow::refreshPartTree(){
     QSignalBlocker blocker(tree_);
     tree_->clear();
+    std::map<std::string,QTreeWidgetItem*> groups;
     for(std::size_t i=0;i<project_.parts.size();i++){
         const auto& part=project_.parts[i];
-        auto* item=new QTreeWidgetItem(tree_);
-        item->setText(0,q(part.name)+"   ["+q(part.group)+"]");
+        const auto group=part.group.empty()?std::string("Ungrouped"):part.group;
+        if(!groups.count(group)){
+            auto* header=new QTreeWidgetItem(tree_);
+            header->setText(0,q(group));
+            header->setData(0,Qt::UserRole,-1);
+            header->setExpanded(true);
+            header->setForeground(0,QColor("#e5b483"));
+            groups[group]=header;
+        }
+        auto* item=new QTreeWidgetItem(groups[group]);
+        item->setText(0,q(part.name));
+        item->setToolTip(0,QString("%1 · %2").arg(q(part.material),q(part.texture)));
         item->setData(0,Qt::UserRole,int(i));
         if(!part.visible)item->setForeground(0,QColor("#667681"));
         if(int(i)==selected_)tree_->setCurrentItem(item);
@@ -267,6 +333,7 @@ void MainWindow::refreshInspector(){
     updating_=true;
     const bool enabled=selected_>=0&&selected_<int(project_.parts.size());
     partName_->setEnabled(enabled);groupName_->setEnabled(enabled);material_->setEnabled(enabled);
+    texture_->setEnabled(enabled);
     visible_->setEnabled(enabled);
     for(int i=0;i<3;i++){
         from_[i]->setEnabled(enabled);to_[i]->setEnabled(enabled);
@@ -274,7 +341,7 @@ void MainWindow::refreshInspector(){
     }
     if(enabled){
         const auto& part=project_.parts[std::size_t(selected_)];
-        partName_->setText(q(part.name));groupName_->setText(q(part.group));
+        partName_->setText(q(part.name));groupName_->setText(q(part.group));texture_->setText(q(part.texture));
         int material=material_->findText(q(part.material));
         if(material<0){material_->addItem(q(part.material));material=material_->count()-1;}
         material_->setCurrentIndex(material);visible_->setChecked(part.visible);
@@ -284,7 +351,7 @@ void MainWindow::refreshInspector(){
         const double pivot[]={part.pivot.x,part.pivot.y,part.pivot.z};
         for(int i=0;i<3;i++){from_[i]->setValue(f[i]);to_[i]->setValue(t[i]);angle_[i]->setValue(a[i]);pivot_[i]->setValue(pivot[i]);}
     }else {
-        partName_->clear();groupName_->clear();visible_->setChecked(false);
+        partName_->clear();groupName_->clear();texture_->clear();visible_->setChecked(false);
     }
     updating_=false;
 }
@@ -295,6 +362,7 @@ void MainWindow::refreshScene(){
     view.showFormed=formed;
     view.ghostStructure=formed;
     view.layer=formed?-1:layer_;
+    view.gridY=formed?workPlane_->value():0.0;
     view.selectedPart=selected_;
     viewport_->setScene(project_,view);
     layers_->setProject(&project_);layers_->setLayer(layer_);
@@ -342,9 +410,37 @@ void MainWindow::addPart(){
     snapshot();
     const double x=project_.dimensions[0]*0.5;
     const double z=project_.dimensions[2]*0.5;
-    auto part=makeBox(project_,{{x-0.5,0.5,z-0.5},{x+0.5,1.5,z+0.5}});
+    const double y=workPlane_->value();
+    auto part=makeBox(project_,{{x-0.5,y,z-0.5},{x+0.5,y+drawHeight_->value(),z+0.5}});
+    part.group="Model";part.name="Cube "+std::to_string(project_.parts.size()+1);
     project_.parts.push_back(part);selected_=int(project_.parts.size()-1);
     mode_->setCurrentIndex(1);commitChanged();
+}
+void MainWindow::addDrawnBox(double x0,double z0,double x1,double z1){
+    if(mode_->currentIndex()!=1)return;
+    auto bounds=drawnCuboid({x0,0,z0},{x1,0,z1},workPlane_->value(),
+        drawHeight_->value(),snap_->currentData().toDouble());
+    snapshot();
+    auto part=makeBox(project_,bounds);
+    part.name="Cube "+std::to_string(project_.parts.size()+1);
+    part.group="Model";
+    // Inherit material from the last selected cube when available.
+    if(selected_>=0 && selected_<int(project_.parts.size()))
+        part.material=project_.parts[std::size_t(selected_)].material;
+    project_.parts.push_back(part);
+    selected_=int(project_.parts.size())-1;
+    commitChanged();
+}
+void MainWindow::switchWorkspace(){
+    if(!mode_ || !viewport_ || !layerContainer_)return;
+    const bool isModel=mode_->currentIndex()==1;
+    layerContainer_->setVisible(!isModel);
+    tool_->setEnabled(isModel);axis_->setEnabled(isModel);
+    snap_->setEnabled(isModel);workPlane_->setEnabled(isModel);
+    drawHeight_->setEnabled(isModel && tool_->currentData().toInt()==int('b'));
+    ghost_->setEnabled(isModel);
+    modelToolbar_->setVisible(isModel);
+    refreshScene();
 }
 void MainWindow::duplicatePart(){
     if(selected_<0||selected_>=int(project_.parts.size()))return;
@@ -364,6 +460,7 @@ void MainWindow::applyInspector(){
     if(updating_||selected_<0||selected_>=int(project_.parts.size()))return;
     auto part=project_.parts[std::size_t(selected_)];
     part.name=partName_->text().toStdString();part.group=groupName_->text().toStdString();
+    part.texture=texture_->text().trimmed().toStdString();
     part.material=material_->currentText().toStdString();part.visible=visible_->isChecked();
     part.bounds.from={from_[0]->value(),from_[1]->value(),from_[2]->value()};
     part.bounds.to={to_[0]->value(),to_[1]->value(),to_[2]->value()};
@@ -374,7 +471,8 @@ void MainWindow::applyInspector(){
         return;
     }
     const auto& old=project_.parts[std::size_t(selected_)];
-    if(part.name==old.name && part.group==old.group && part.material==old.material && part.visible==old.visible &&
+    if(part.name==old.name && part.group==old.group && part.material==old.material &&
+       part.texture==old.texture && part.visible==old.visible &&
        part.bounds.from.x==old.bounds.from.x && part.bounds.from.y==old.bounds.from.y && part.bounds.from.z==old.bounds.from.z &&
        part.bounds.to.x==old.bounds.to.x && part.bounds.to.y==old.bounds.to.y && part.bounds.to.z==old.bounds.to.z &&
        part.rotationDegrees.x==old.rotationDegrees.x&&part.rotationDegrees.y==old.rotationDegrees.y&&part.rotationDegrees.z==old.rotationDegrees.z&&

@@ -26,13 +26,20 @@ public:
     void resetCamera();
     void setSelection(int index);
     void setAxis(char axis);
-    void setTool(char tool); // W = translate, E = rotate, R = scale
+    void setTool(char tool); // V = Select, B = Draw, W = Move, E = Rotate, R = Resize
+    void setWorkPlane(double y);
+    void setDrawHeight(double height);
+    void setGridStep(double step);
+    void setCameraPreset(int preset); // 0 perspective, 1 top, 2 front, 3 right
     bool rendererReady() const { return glReady_; }
 signals:
     void partSelected(int index);
     void beginEdit();
     void deltaEdit(double amount,char axis,char tool);
     void endEdit();
+    void boxDrawn(double startX,double startZ,double endX,double endZ);
+    void axisPicked(char axis);
+    void cameraPresetChanged(int preset);
 protected:
     void initializeGL() override;
     void paintGL() override;
@@ -55,6 +62,9 @@ private:
     QPointF projectPoint(Vec3 pos) const;
     void uploadBuffers();
     void drawBuffer(QOpenGLBuffer& buffer, const std::vector<Vertex>& verts,GLenum primitive);
+    bool workPlaneAt(const QPoint& screen,Vec3& point) const;
+    char gizmoAt(const QPoint& screen) const;
+    void drawModelOverlay();
 
     Project document_;
     BuildOptions options_;
@@ -75,13 +85,22 @@ private:
     bool orbiting_=false;
     bool panning_=false;
     bool transforming_=false;
+    bool drawing_=false;
+    bool selecting_=false;
+    bool hasDrawPreview_=false;
+    Vec3 drawStart_{};
+    Vec3 drawEnd_{};
+    double workPlane_=0.0;
+    double drawHeight_=1.0;
+    double gridStep_=1.0/16.0;
+    int cameraPreset_=0;
     double dragAccum_=0;
     double emittedDrag_=0;
     double distance_=12;
     double yaw_=0.8, pitch_=0.55;
     QVector3D target_{2.5f,1.0f,2.5f};
     char activeAxis_='x';
-    char activeTool_='w';
+    char activeTool_='v';
 };
 
 } // namespace studio

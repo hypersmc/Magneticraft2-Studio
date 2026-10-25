@@ -9,6 +9,7 @@ class QAction;
 class QComboBox;
 class QDoubleSpinBox;
 class QLineEdit;
+class QToolBar;
 class QSpinBox;
 class QTreeWidget;
 class QCheckBox;
@@ -53,6 +54,8 @@ private:
     void editCell(int x,int y,int z,const QString& role);
     void resizeDocument();
     void applyTransformDelta(double amount,char axis,char tool);
+    void addDrawnBox(double x0,double z0,double x1,double z1);
+    void switchWorkspace();
     void commitChanged();
 
     Project project_;
@@ -66,6 +69,8 @@ private:
     int layer_=0;
     Viewport* viewport_=nullptr;
     LayerCanvas* layers_=nullptr;
+    QWidget* layerContainer_=nullptr;
+    QToolBar* modelToolbar_=nullptr;
     QTreeWidget* tree_=nullptr;
     QComboBox* role_=nullptr;
     QComboBox* material_=nullptr;
@@ -73,8 +78,13 @@ private:
     QCheckBox* ghost_=nullptr;
     QComboBox* tool_=nullptr;
     QComboBox* axis_=nullptr;
+    QComboBox* snap_=nullptr;
+    QComboBox* viewPreset_=nullptr;
+    QDoubleSpinBox* workPlane_=nullptr;
+    QDoubleSpinBox* drawHeight_=nullptr;
     QSpinBox* layerSpinner_=nullptr;
     QLineEdit* partName_=nullptr;
+    QLineEdit* texture_=nullptr;
     QLineEdit* groupName_=nullptr;
     QDoubleSpinBox* from_[3]{};
     QDoubleSpinBox* to_[3]{};

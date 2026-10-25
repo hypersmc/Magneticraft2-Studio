@@ -21,6 +21,7 @@ struct BuildOptions {
     bool showGrid=true;
     int layer=-1; // -1 = all construction layers
     int selectedPart=-1;
+    double gridY=0.0; // Modeling plane; independent from construction layer
 };
 
 Rgb materialColor(const std::string& material);

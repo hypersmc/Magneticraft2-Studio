@@ -1,6 +1,10 @@
 #include "Viewport.hpp"
+#include "core/Modeling.hpp"
 
 #include <QMouseEvent>
+#include <QPainter>
+#include <QPen>
+#include <QFont>
 #include <QOpenGLContext>
 #include <QVector2D>
 #include <QVector4D>
@@ -20,7 +24,7 @@ Viewport::Viewport(QWidget* parent):QOpenGLWidget(parent),mailbox_(std::make_sha
     setMouseTracking(true);
     connect(&poll_,&QTimer::timeout,this,&Viewport::pollResults);
     poll_.start(32);
-    setTool('w');
+    setTool('v');
 }
 Viewport::~Viewport(){
     poll_.stop();
@@ -41,8 +45,19 @@ void Viewport::setSelection(int i){
     options_.selectedPart=i;
     rebuildAsync();
 }
-void Viewport::setTool(char tool){if(tool=='w'||tool=='e'||tool=='r')activeTool_=tool;}
-void Viewport::setAxis(char axis){if(axis=='x'||axis=='y'||axis=='z')activeAxis_=axis;}
+void Viewport::setTool(char tool){
+    if(tool=='v'||tool=='b'||tool=='w'||tool=='e'||tool=='r')activeTool_=tool;
+    update();
+}
+void Viewport::setAxis(char axis){if(axis=='x'||axis=='y'||axis=='z')activeAxis_=axis;update();}
+void Viewport::setWorkPlane(double y){workPlane_=y;options_.gridY=y;rebuildAsync();update();}
+void Viewport::setDrawHeight(double height){drawHeight_=std::max(1.0/16.0,height);update();}
+void Viewport::setGridStep(double step){gridStep_=std::clamp(step,1.0/16.0,1.0);update();}
+void Viewport::setCameraPreset(int preset){
+    cameraPreset_=std::clamp(preset,0,3);
+    update();
+}
+
 void Viewport::resetCamera(){
     const auto& d=document_.dimensions;
     target_={d[0]*0.5f,d[1]*0.5f,d[2]*0.5f};
@@ -108,9 +123,17 @@ void Viewport::updateCameraMatrices(){
     const float cp=float(std::cos(pitch_)), sp=float(std::sin(pitch_));
     const float cy=float(std::cos(yaw_)),sy=float(std::sin(yaw_));
     QVector3D eye=target_+QVector3D(float(distance_)*cp*sy,float(distance_)*sp,float(distance_)*cp*cy);
-    view_.setToIdentity();view_.lookAt(eye,target_,QVector3D(0,1,0));
+    QVector3D up(0,1,0);
+    if(cameraPreset_==1){ eye=target_+QVector3D(0,float(distance_),0);up=QVector3D(0,0,-1); }
+    if(cameraPreset_==2){ eye=target_+QVector3D(0,0,float(distance_)); }
+    if(cameraPreset_==3){ eye=target_+QVector3D(float(distance_),0,0); }
+    view_.setToIdentity();view_.lookAt(eye,target_,up);
     projection_.setToIdentity();
-    projection_.perspective(46.0f,float(std::max(1,width()))/float(std::max(1,height())),0.05f,2500.0f);
+    const float aspect=float(std::max(1,width()))/float(std::max(1,height()));
+    if(cameraPreset_!=0){
+        const float halfHeight=float(distance_)*0.55f;
+        projection_.ortho(-halfHeight*aspect,halfHeight*aspect,-halfHeight,halfHeight,0.05f,2500.0f);
+    }else projection_.perspective(46.0f,aspect,0.05f,2500.0f);
     mvp_=projection_*view_;
 }
 void Viewport::drawBuffer(QOpenGLBuffer& buffer,const std::vector<Vertex>& vertices,GLenum primitive){
@@ -142,6 +165,7 @@ void Viewport::paintGL(){
     drawBuffer(solid_,mesh_.triangles,GL_TRIANGLES);
     drawBuffer(lines_,mesh_.lines,GL_LINES);
     vao_.release();shader_.release();
+    if(options_.showFormed)drawModelOverlay();
 }
 void Viewport::wheelEvent(QWheelEvent* e){
     distance_=std::clamp(distance_*std::exp(-e->angleDelta().y()*0.001),1.2,1800.0);
@@ -184,19 +208,107 @@ QPointF Viewport::projectPoint(Vec3 v) const {
     return {(projected.x()/projected.w()*0.5+0.5)*width(),
         (0.5-projected.y()/projected.w()*0.5)*height()};
 }
+bool Viewport::workPlaneAt(const QPoint& screen,Vec3& result) const {
+    bool invertible=false;
+    const auto inverse=mvp_.inverted(&invertible);
+    if(!invertible)return false;
+    const float nx=2.0f*float(screen.x())/float(std::max(1,width()))-1.0f;
+    const float ny=1.0f-2.0f*float(screen.y())/float(std::max(1,height()));
+    auto a=inverse*QVector4D(nx,ny,-1.0f,1.0f);
+    auto b=inverse*QVector4D(nx,ny,1.0f,1.0f);
+    if(std::abs(a.w())<1e-7f||std::abs(b.w())<1e-7f)return false;
+    const auto ray=a.toVector3DAffine();
+    const auto direction=b.toVector3DAffine()-ray;
+    if(std::abs(direction.y())<1e-8f)return false;
+    const double t=(workPlane_-ray.y())/direction.y();
+    if(t<0 || t>1.0)return false;
+    const auto hit=ray+direction*float(t);
+    if(!std::isfinite(hit.x())||!std::isfinite(hit.z()))return false;
+    result={snapGrid(hit.x(),gridStep_),workPlane_,snapGrid(hit.z(),gridStep_)};
+    return true;
+}
+char Viewport::gizmoAt(const QPoint& screen) const {
+    if(options_.selectedPart<0||options_.selectedPart>=int(document_.parts.size()))return 0;
+    const Part& part=document_.parts[std::size_t(options_.selectedPart)];
+    const double length=std::max(0.7,std::min(2.5,(part.bounds.to.x-part.bounds.from.x+part.bounds.to.y-part.bounds.from.y+part.bounds.to.z-part.bounds.from.z)*0.28));
+    const QPointF p=projectPoint(part.pivot);
+    char best=0;double closest=12.0;
+    for(const auto pair:std::array<std::pair<char,Vec3>,3>{{{'x',{length,0,0}},{'y',{0,length,0}},{'z',{0,0,length}}}}){
+        const QPointF e=projectPoint(part.pivot+pair.second);
+        const QPointF ab=e-p;const QPointF ap=QPointF(screen)-p;
+        const double len=ab.x()*ab.x()+ab.y()*ab.y();
+        if(len<100.0)continue;
+        const double u=std::clamp((ap.x()*ab.x()+ap.y()*ab.y())/len,0.15,1.2);
+        const QPointF nearest=p+ab*u;
+        const double dist=std::hypot(screen.x()-nearest.x(),screen.y()-nearest.y());
+        if(dist<closest){closest=dist;best=pair.first;}
+    }
+    return best;
+}
+void Viewport::drawModelOverlay(){
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing,true);
+    painter.setFont(QFont("Sans Serif",10));
+    const QString mode=activeTool_=='b'?"DRAW BOX":activeTool_=='v'?"SELECT":activeTool_=='w'?"MOVE":activeTool_=='e'?"ROTATE":"RESIZE";
+    const QString preset=cameraPreset_==1?"TOP":cameraPreset_==2?"FRONT":cameraPreset_==3?"RIGHT":"PERSPECTIVE";
+    painter.fillRect(QRect(12,12,400,38),QColor(18,29,39,210));
+    painter.setPen(QColor(231,198,152));
+    painter.drawText(QRect(24,12,380,38),Qt::AlignVCenter,
+        QString("MODEL  /  %1  ·  %2  ·  SNAP %3").arg(mode,preset,QString::number(gridStep_,'g',3)));
+    painter.setPen(QColor(153,183,198));
+    painter.drawText(QRect(20,height()-36,width()-30,30),Qt::AlignVCenter,
+        activeTool_=='b'?"Left-drag across the workplane to create a cube  ·  Scroll to zoom  ·  Right-drag to pan":
+        "Click a part to select  ·  Drag XYZ handles with Move/Rotate/Resize  ·  Left-drag empty space to orbit");
+    if(drawing_ && hasDrawPreview_){
+        const Bounds b=drawnCuboid(drawStart_,drawEnd_,workPlane_,drawHeight_,gridStep_);
+        const auto a=b.from,c=b.to;
+        const Vec3 vertices[]={{a.x,a.y,a.z},{c.x,a.y,a.z},{c.x,c.y,a.z},{a.x,c.y,a.z},
+            {a.x,a.y,c.z},{c.x,a.y,c.z},{c.x,c.y,c.z},{a.x,c.y,c.z}};
+        const int edges[][2]={{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
+        painter.setPen(QPen(QColor(253,183,83),2,Qt::DashLine));
+        for(const auto &edge:edges)painter.drawLine(projectPoint(vertices[edge[0]]),projectPoint(vertices[edge[1]]));
+    }
+    if(options_.selectedPart>=0 && options_.selectedPart<int(document_.parts.size())) {
+        const Part& part=document_.parts[std::size_t(options_.selectedPart)];
+        const double length=std::max(0.7,std::min(2.5,(part.bounds.to.x-part.bounds.from.x+part.bounds.to.y-part.bounds.from.y+part.bounds.to.z-part.bounds.from.z)*0.28));
+        const QPointF p=projectPoint(part.pivot);
+        for(const auto pair:std::array<std::pair<char,Vec3>,3>{{{'x',{length,0,0}},{'y',{0,length,0}},{'z',{0,0,length}}}}){
+            const QColor color=pair.first=='x'?QColor("#fb625b"):pair.first=='y'?QColor("#6cdb85"):QColor("#66a1fc");
+            const QPointF e=projectPoint(part.pivot+pair.second);
+            painter.setPen(QPen(color,pair.first==activeAxis_?4:2));painter.drawLine(p,e);
+            painter.setBrush(color);painter.drawEllipse(e,5,5);
+            painter.setPen(QColor("#f7fafc"));painter.drawText(e+QPointF(7,-8),QString(QChar(pair.first).toUpper()));
+        }
+    }
+}
 void Viewport::mousePressEvent(QMouseEvent* event){
     setFocus(Qt::MouseFocusReason);
     lastMouse_=event->pos();
-    orbiting_=panning_=transforming_=false;
+    orbiting_=panning_=transforming_=drawing_=selecting_=false;
     if(event->button()==Qt::MiddleButton || event->button()==Qt::RightButton){panning_=true;return;}
     if(event->button()!=Qt::LeftButton)return;
-    if(options_.showFormed) {
-        updateCameraMatrices();
+    updateCameraMatrices();
+    if(options_.showFormed){
+        if(activeTool_=='b'){
+            Vec3 point;
+            if(workPlaneAt(event->pos(),point)){
+                drawStart_=drawEnd_=point;drawing_=hasDrawPreview_=true;update();
+            }
+            return;
+        }
+        if(activeTool_=='w'||activeTool_=='e'||activeTool_=='r'){
+            const char axis=gizmoAt(event->pos());
+            if(axis){
+                activeAxis_=axis;emit axisPicked(axis);
+                transforming_=true;dragAccum_=emittedDrag_=0;emit beginEdit();return;
+            }
+        }
         const int hit=pickPart(event->pos());
-        if(hit>=0) {
+        if(hit>=0){
             if(hit!=options_.selectedPart){options_.selectedPart=hit;emit partSelected(hit);rebuildAsync();}
-            transforming_=true;dragAccum_=0;emittedDrag_=0;
-            emit beginEdit();
+            if(activeTool_!='v'){
+                transforming_=true;dragAccum_=emittedDrag_=0;emit beginEdit();
+            }else selecting_=true;
             return;
         }
         emit partSelected(-1);
@@ -206,7 +318,17 @@ void Viewport::mousePressEvent(QMouseEvent* event){
 void Viewport::mouseMoveEvent(QMouseEvent* event){
     const QPoint delta=event->pos()-lastMouse_;
     lastMouse_=event->pos();
-    if(orbiting_) {yaw_+=delta.x()*0.008;pitch_=std::clamp(pitch_+delta.y()*0.008,-1.40,1.40);update();return;}
+    if(drawing_){
+        updateCameraMatrices();
+        Vec3 point;
+        if(workPlaneAt(event->pos(),point)){drawEnd_=point;hasDrawPreview_=true;update();}
+        return;
+    }
+    if(orbiting_) {
+        if(cameraPreset_!=0){cameraPreset_=0;emit cameraPresetChanged(0);}
+        yaw_+=delta.x()*0.008;pitch_=std::clamp(pitch_+delta.y()*0.008,-1.40,1.40);
+        update();return;
+    }
     if(panning_){
         const float speed=float(distance_*0.0018);
         const QVector3D right(float(std::cos(yaw_)),0,float(-std::sin(yaw_)));
@@ -225,17 +347,21 @@ void Viewport::mouseMoveEvent(QMouseEvent* event){
     double deltaUnits=len2>=40?QVector2D::dotProduct(mouse,vector)/len2:double(delta.x())/40.0;
     if(activeTool_=='e')deltaUnits*=45.0;
     dragAccum_+=deltaUnits;
-    const double snap=activeTool_=='e'?5.0:1.0/16.0;
+    const double snap=activeTool_=='e'?5.0:gridStep_;
     const double candidate=std::round(dragAccum_/snap)*snap;
     const double motion=candidate-emittedDrag_;
-    if(std::abs(motion)>1e-8) {
+    if(std::abs(motion)>1e-8){
         emittedDrag_=candidate;
         emit deltaEdit(motion,activeAxis_,activeTool_);
     }
 }
-void Viewport::mouseReleaseEvent(QMouseEvent*){
+void Viewport::mouseReleaseEvent(QMouseEvent* event){
+    if(drawing_ && hasDrawPreview_ && event->button()==Qt::LeftButton){
+        emit boxDrawn(drawStart_.x,drawStart_.z,drawEnd_.x,drawEnd_.z);
+    }
     if(transforming_)emit endEdit();
-    transforming_=orbiting_=panning_=false;
+    transforming_=orbiting_=panning_=drawing_=selecting_=hasDrawPreview_=false;
+    update();
 }
 
 } // namespace studio

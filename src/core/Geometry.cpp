@@ -73,9 +73,10 @@ Geometry buildGeometry(const Project& p,BuildOptions options) {
     Geometry result;
     const auto& dim=p.dimensions;
     if(options.showGrid) {
+        const double gy=options.showFormed?options.gridY:0.0;
         const Rgb faint={0.23f,0.29f,0.34f};
-        for(int x=0;x<=dim[0];x++)line(result,{double(x),-0.012,0},{double(x),-0.012,double(dim[2])},faint);
-        for(int z=0;z<=dim[2];z++)line(result,{0,-0.012,double(z)},{double(dim[0]),-0.012,double(z)},faint);
+        for(int x=0;x<=dim[0];x++)line(result,{double(x),gy-0.012,0},{double(x),gy-0.012,double(dim[2])},faint);
+        for(int z=0;z<=dim[2];z++)line(result,{0,gy-0.012,double(z)},{double(dim[0]),gy-0.012,double(z)},faint);
         const Rgb axis={0.42f,0.52f,0.65f};
         line(result,{0,0,0},{double(dim[0]),0,0},axis);
         line(result,{0,0,0},{0,double(dim[1]),0},{0.35f,0.76f,0.46f});
