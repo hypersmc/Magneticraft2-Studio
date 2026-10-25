@@ -83,8 +83,8 @@ void UvEditor::mousePressEvent(QMouseEvent* event){
 void UvEditor::mouseMoveEvent(QMouseEvent* event){
     if(handle_<0)return;
     const QPointF now=toUv(event->position());
-    const double gridU=1.0/std::max(1,image_.width());
-    const double gridV=1.0/std::max(1,image_.height());
+    const double gridU=1.0/std::max(16,image_.width());
+    const double gridV=1.0/std::max(16,image_.height());
     const auto snap=[](double a,double grid){return std::round(a/grid)*grid;};
     const double dx=snap(now.x()-downUV_.x(),gridU);
     const double dy=snap(now.y()-downUV_.y(),gridV);
