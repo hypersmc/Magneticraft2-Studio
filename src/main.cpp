@@ -1,11 +1,15 @@
 #include "ui/MainWindow.hpp"
+#include "ui/Viewport.hpp"
 
 #include <QApplication>
 #include <QFileInfo>
 #include <QFont>
 #include <QPalette>
+#include <QPixmap>
 #include <QSettings>
 #include <QStyleFactory>
+#include <QTimer>
+#include <QDebug>
 #include <QSurfaceFormat>
 
 int main(int argc,char** argv) {
@@ -59,7 +63,29 @@ int main(int argc,char** argv) {
         QLabel#InspectorHelp { color: #8297a6; font-size: 9pt; }
     )");
     studio::MainWindow window;
-    if(argc>1){const QString filename=QString::fromLocal8Bit(argv[1]);if(QFileInfo::exists(filename))window.openPath(filename);}
+    bool smoke=false;
+    QString screenshot;
+    for(int i=1;i<argc;i++){
+        const QString argument=QString::fromLocal8Bit(argv[i]);
+        if(argument=="--smoke")smoke=true;
+        else if(argument=="--screenshot" && i+1<argc)screenshot=QString::fromLocal8Bit(argv[++i]);
+        else if(QFileInfo::exists(argument))window.openPath(argument);
+    }
     window.show();
+    if(smoke) {
+        QTimer::singleShot(1600,&app,[&](){
+            const auto* viewport=window.findChild<studio::Viewport*>();
+            if(!viewport || !viewport->isValid() || !viewport->rendererReady()){
+                qCritical("Native OpenGL 3.3 viewport failed startup smoke test");
+                app.exit(4);return;
+            }
+            if(!screenshot.isEmpty() && !window.grab().save(screenshot)){
+                qCritical("Failed to save native GUI preview screenshot");
+                app.exit(5);return;
+            }
+            qInfo("Native Qt 6 / OpenGL 3.3 startup smoke test passed");
+            app.quit();
+        });
+    }
     return app.exec();
 }
