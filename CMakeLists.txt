@@ -34,6 +34,7 @@ if(NOT STUDIO_HEADLESS_ONLY)
         src/ui/Viewport.hpp src/ui/Viewport.cpp
         src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
         src/ui/UvEditor.hpp src/ui/UvEditor.cpp
+        src/ui/UvFaceOverview.hpp src/ui/UvFaceOverview.cpp
     )
     target_link_libraries(magneticraft2-studio PRIVATE studio_core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets ZLIB::ZLIB)
     install(TARGETS magneticraft2-studio RUNTIME DESTINATION bin)
@@ -57,7 +58,8 @@ if(STUDIO_BUILD_TESTS)
         find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
         add_executable(studio-gizmos-uv-tests tests/test_gizmos_uv.cpp
             src/ui/Viewport.hpp src/ui/Viewport.cpp
-            src/ui/UvEditor.hpp src/ui/UvEditor.cpp)
+            src/ui/UvEditor.hpp src/ui/UvEditor.cpp
+        src/ui/UvFaceOverview.hpp src/ui/UvFaceOverview.cpp)
         target_link_libraries(studio-gizmos-uv-tests PRIVATE studio_core
             Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test)
         add_executable(studio-model-ui-tests tests/test_model_ui.cpp
@@ -78,12 +80,16 @@ if(STUDIO_BUILD_TESTS)
         target_link_libraries(studio-texture-assets-tests PRIVATE studio_core Qt6::Core Qt6::Gui ZLIB::ZLIB)
         target_compile_definitions(studio-texture-assets-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-texture-assets-tests COMMAND studio-texture-assets-tests)
+        add_executable(studio-uv-overview-tests tests/test_uv_overview.cpp
+            src/ui/UvFaceOverview.hpp src/ui/UvFaceOverview.cpp)
+        target_link_libraries(studio-uv-overview-tests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
             src/ui/StartPage.hpp src/ui/StartPage.cpp
             src/ui/Viewport.hpp src/ui/Viewport.cpp
             src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
             src/ui/UvEditor.hpp src/ui/UvEditor.cpp
+        src/ui/UvFaceOverview.hpp src/ui/UvFaceOverview.cpp
             src/io/ProjectIO.hpp src/io/ProjectIO.cpp
             src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
             src/io/TextureAssets.hpp src/io/TextureAssets.cpp)

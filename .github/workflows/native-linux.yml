@@ -31,6 +31,8 @@ jobs:
         run: timeout 20s env LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --sample-washer --smoke --screenshot build/studio-washer.png
       - name: Native editor UX smoke test (workspaces/outliner)
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-editor-ui-tests build/studio-editor-ux.png
+      - name: Six-face UV overview mouse test
+        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-uv-overview-tests build/studio-uv-six-faces.png
       - name: Preserve GUI preview
         uses: actions/upload-artifact@v4
         with:
@@ -42,3 +44,4 @@ jobs:
             build/studio-editor-ux.png
             build/studio-washer.png
             build/studio-textured.png
+            build/studio-uv-six-faces.png

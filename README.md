@@ -198,3 +198,7 @@ rotating drum, large and small pulleys, leather belt, biome-tinted water, and
 moving items come from the mod's separate BlockEntityRenderer and are not
 reconstructed merely by loading the static JSON. Do not mistake the static
 preview for a complete in-game rendering.
+
+## UV workspace — all six cube faces (v0.6)
+
+Choose **UV / Texture** while a cuboid is selected. Studio shows an unfolded preview of **all six faces** at once, a larger editable texture atlas, a live 3D preview and per-face numeric controls. Click any side in the overview (or use the face selector) to edit it; independent texture IDs and imported UVs are preserved. Faces sharing the selected PNG appear as dashed overlays on the atlas. Details: [UV workspace guide](docs/UV_WORKSPACE.md).

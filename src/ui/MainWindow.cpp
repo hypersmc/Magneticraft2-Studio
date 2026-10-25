@@ -1,6 +1,7 @@
 #include "MainWindow.hpp"
 #include "LayerCanvas.hpp"
 #include "UvEditor.hpp"
+#include "UvFaceOverview.hpp"
 #include "Viewport.hpp"
 #include "StartPage.hpp"
 #include "io/ProjectIO.hpp"
@@ -164,7 +165,44 @@ void MainWindow::buildUI(){
     layerLayout->addWidget(layers_,1);
     splitter->addWidget(layerContainer_);
     splitter->setStretchFactor(0,3);splitter->setStretchFactor(1,1);
-    canvasLayout->addWidget(splitter,1);
+    // The UV workspace is a first-class editing surface, not a small
+    // rectangle buried in the properties dock. In Model mode it is hidden and
+    // the same OpenGL viewport gets the full canvas width.
+    auto* mainViews=new QSplitter(Qt::Horizontal,canvasShell);
+    mainViews->setObjectName("UVWorkspaceSplitter");
+    mainViews->setChildrenCollapsible(false);
+    uvWorkspacePanel_=new QWidget(mainViews);
+    uvWorkspacePanel_->setObjectName("UVWorkspacePanel");
+    uvWorkspacePanel_->setMinimumWidth(330);
+    auto* uvLayout=new QVBoxLayout(uvWorkspacePanel_);
+    uvLayout->setContentsMargins(12,12,12,12);
+    uvLayout->setSpacing(8);
+    auto* heading=new QLabel("CUBOID  /  SIX FACES",uvWorkspacePanel_);
+    heading->setObjectName("ContextTitle");
+    uvLayout->addWidget(heading);
+    auto* helper=new QLabel("Click a face in the net to select it. Each side keeps its own texture and UV mapping.",uvWorkspacePanel_);
+    helper->setWordWrap(true);
+    helper->setStyleSheet("color:#a9bbc9;");
+    uvLayout->addWidget(helper);
+    uvFaceOverview_=new UvFaceOverview(uvWorkspacePanel_);
+    uvFaceOverview_->setObjectName("UvFaceOverview");
+    uvLayout->addWidget(uvFaceOverview_,5);
+    auto* atlasTitle=new QLabel("TEXTURE ATLAS  /  SELECTED FACE",uvWorkspacePanel_);
+    atlasTitle->setObjectName("ContextTitle");
+    uvLayout->addWidget(atlasTitle);
+    auto* atlasHint=new QLabel("Solid amber: current face. Dashed colors: other faces using the same PNG. Drag handles below to edit this face.",uvWorkspacePanel_);
+    atlasHint->setWordWrap(true);atlasHint->setStyleSheet("color:#a9bbc9;");
+    uvLayout->addWidget(atlasHint);
+    uvCanvas_=new UvEditor(uvWorkspacePanel_);
+    uvCanvas_->setObjectName("UvCanvas");
+    uvCanvas_->setMinimumHeight(210);
+    uvLayout->addWidget(uvCanvas_,6);
+    mainViews->addWidget(uvWorkspacePanel_);
+    mainViews->addWidget(splitter);
+    mainViews->setStretchFactor(0,3);
+    mainViews->setStretchFactor(1,2);
+    uvWorkspacePanel_->hide();
+    canvasLayout->addWidget(mainViews,1);
     rootLayout->addWidget(canvasShell,1);
     setCentralWidget(central);
 
@@ -368,9 +406,11 @@ void MainWindow::createTextureDock(){
     textureInfo_->setWordWrap(true);
     textureInfo_->setStyleSheet("color:#aec2cf;");
     layout->addWidget(textureInfo_);
-    uvCanvas_=new UvEditor(panel);
-    uvCanvas_->setObjectName("UvCanvas");
-    layout->addWidget(uvCanvas_);
+    // The live atlas lives in the central UV workspace beside the 3D model.
+    // The right-side dock contains numeric controls only; no tiny UV canvas.
+    auto* faceHint=new QLabel("Select any of the six faces on the central cube net; edit its atlas region on the larger canvas.",panel);
+    faceHint->setWordWrap(true);faceHint->setStyleSheet("color:#9fb2bf;");
+    layout->addWidget(faceHint);
     auto* controls=new QGridLayout;
     controls->setSpacing(6);
     auto* autoUV=new QPushButton("Auto UV",panel);
@@ -403,6 +443,9 @@ void MainWindow::createTextureDock(){
     if(props)tabifyDockWidget(props,textureDock_);
     textureDock_->raise();
     connect(uvFace_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){refreshTexturePanel();});
+    connect(uvFaceOverview_,&UvFaceOverview::facePicked,this,[this](int face){
+        if(face>=0&&face<6)uvFace_->setCurrentIndex(face);
+    });
     connect(uvTexture_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){applyFaceTexture();});
     connect(autoUV,&QPushButton::clicked,this,&MainWindow::setAutoUv);
     connect(rotateUV,&QPushButton::clicked,this,&MainWindow::rotateUv);
@@ -464,7 +507,9 @@ void MainWindow::refreshTexturePanel(){
     if(!enabled){
         uvImageKey_.clear();cachedUvImage_=QImage();
         uvCanvas_->setEnabled(false);uvCanvas_->setImage({});uvCanvas_->setRect({0,0,1,1});
-        textureInfo_->setText("Select a formed-model cuboid to edit its face textures.");
+        uvCanvas_->setFaceOverlays({},-1);
+        uvFaceOverview_->clear();
+        textureInfo_->setText("Select a formed-model cuboid to view all six face textures.");
         return;
     }
     uvCanvas_->setEnabled(true);
@@ -476,6 +521,30 @@ void MainWindow::refreshTexturePanel(){
         uvNumbers_[i]->setValue(rectangle[std::size_t(i)]);
     }
     const auto texture=selectedFace->texture.empty()?part.texture:selectedFace->texture;
+    // Show six independent faces in the cube net, and overlay only mappings
+    // that actually use the same PNG on the selected texture atlas.
+    std::array<UvFaceOverview::Face,6> overview{};
+    std::array<UvEditor::OverlayFace,6> outlines{};
+    for(int i=0;i<6;i++){
+        const auto& f=part.faces[std::size_t(i)];
+        const std::string resource=f.texture.empty()?part.texture:f.texture;
+        auto& tile=overview[std::size_t(i)];
+        tile.texture=q(resource);
+        tile.uv=effectiveUV(part,i);
+        tile.automatic=f.automatic;
+        tile.quarterTurns=f.quarterTurns;
+        const auto resourceImage=project_.textures.find(resource);
+        if(resourceImage!=project_.textures.end()){
+            tile.image=QImage::fromData(QByteArray::fromBase64(
+                QByteArray::fromStdString(resourceImage->second)),"PNG");
+        }
+        if(resource==texture && i!=index){
+            outlines[std::size_t(i)].visible=true;
+            outlines[std::size_t(i)].uv=tile.uv;
+        }
+    }
+    uvFaceOverview_->setFaces(overview,index);
+    uvCanvas_->setFaceOverlays(outlines,index);
     const auto found=project_.textures.find(texture);
     if(texture!=uvImageKey_){
         uvImageKey_=texture;cachedUvImage_=QImage();
@@ -671,9 +740,22 @@ void MainWindow::createMenus(){
     workspaceBuild_->setAccessibleName("Construction workspace");
     workspaceModel_->setAccessibleName("Model workspace");
     workspaceUV_->setAccessibleName("UV and textures workspace");
-    connect(workspaceBuild_,&QToolButton::clicked,this,[this](){uvWorkspace_=false;mode_->setCurrentIndex(0);syncWorkspaceChrome();});
-    connect(workspaceModel_,&QToolButton::clicked,this,[this](){uvWorkspace_=false;mode_->setCurrentIndex(1);if(auto* p=findChild<QDockWidget*>("PropertiesDock"))p->raise();syncWorkspaceChrome();});
-    connect(workspaceUV_,&QToolButton::clicked,this,[this](){uvWorkspace_=true;mode_->setCurrentIndex(1);if(textureDock_)textureDock_->raise();syncWorkspaceChrome();});
+    connect(workspaceBuild_,&QToolButton::clicked,this,[this](){
+        uvWorkspace_=false;mode_->setCurrentIndex(0);switchWorkspace();
+    });
+    connect(workspaceModel_,&QToolButton::clicked,this,[this](){
+        uvWorkspace_=false;mode_->setCurrentIndex(1);
+        if(auto* p=findChild<QDockWidget*>("PropertiesDock"))p->raise();
+        switchWorkspace();
+    });
+    connect(workspaceUV_,&QToolButton::clicked,this,[this](){
+        uvWorkspace_=true;mode_->setCurrentIndex(1);
+        // UVs have no use for the transform gizmo; keep the preview clean.
+        const int select=tool_->findData(int('v'));
+        if(select>=0)tool_->setCurrentIndex(select);
+        if(textureDock_)textureDock_->raise();
+        switchWorkspace();
+    });
     header->addSeparator();
     auto* homeButton=new QPushButton("Home",this);
     homeButton->setObjectName("HomeButton");
@@ -960,7 +1042,8 @@ void MainWindow::switchWorkspace(){
     const bool isModel=mode_->currentIndex()==1;
     if(!isModel)uvWorkspace_=false;
     layerContainer_->setVisible(!isModel);
-    if(toolRail_)toolRail_->setVisible(isModel);
+    if(toolRail_)toolRail_->setVisible(isModel&&!uvWorkspace_);
+    if(uvWorkspacePanel_)uvWorkspacePanel_->setVisible(isModel&&uvWorkspace_);
     if(textureDock_)textureDock_->setVisible(isModel);
     if(workspaceBuild_)workspaceBuild_->setEnabled(project_.kind!=ProjectKind::JavaBlock);
     if(ghost_)ghost_->setEnabled(project_.kind!=ProjectKind::JavaBlock);
@@ -972,7 +1055,7 @@ void MainWindow::switchWorkspace(){
     }
     if(drawHeight_)drawHeight_->setEnabled(isModel&&tool_->currentData().toInt()==int('b'));
     if(ghost_)ghost_->setEnabled(isModel&&project_.kind!=ProjectKind::JavaBlock);
-    if(modelToolbar_)modelToolbar_->setVisible(isModel);
+    if(modelToolbar_)modelToolbar_->setVisible(isModel&&!uvWorkspace_);
     syncWorkspaceChrome();
     refreshScene();
 }
@@ -981,7 +1064,7 @@ void MainWindow::syncWorkspaceChrome(){
     if(workspaceBuild_)workspaceBuild_->setChecked(!isModel);
     if(workspaceModel_)workspaceModel_->setChecked(isModel&&!uvWorkspace_);
     if(workspaceUV_)workspaceUV_->setChecked(isModel&&uvWorkspace_);
-    if(sceneTitle_)sceneTitle_->setText(isModel?(uvWorkspace_?"MATERIALS  /  UV":"FORMED MODEL  /  3D EDITOR"):
+    if(sceneTitle_)sceneTitle_->setText(isModel?(uvWorkspace_?"UV  /  3D PREVIEW":"FORMED MODEL  /  3D EDITOR"):
         "CONSTRUCTION  /  BUILD LAYOUT");
     if(tool_){
         const char current=char(tool_->currentData().toInt());

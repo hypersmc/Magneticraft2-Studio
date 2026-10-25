@@ -2,6 +2,9 @@
 #include "ui/StartPage.hpp"
 #include <QPushButton>
 #include "ui/Viewport.hpp"
+#include "ui/UvFaceOverview.hpp"
+#include "ui/UvEditor.hpp"
+#include <QComboBox>
 #include <QApplication>
 #include <QToolButton>
 #include <QLineEdit>
@@ -61,9 +64,29 @@ int main(int argc,char** argv){
     }
     if(!drum){qCritical("Outliner search failed to find sample drum");return 7;}
     search->clear();
-    uv->click();QTest::qWait(150);
+    // Select a model part before visiting the UV workspace. Its six faces
+    // must be shown together, not only through a dropdown.
+    for(int i=0;i<tree->topLevelItemCount();i++){
+        auto* group=tree->topLevelItem(i);
+        if(group->childCount()){
+            tree->setCurrentItem(group->child(0));break;
+        }
+    }
+    uv->click();QTest::qWait(250);
     auto* texture=editor.findChild<QDockWidget*>("TextureDock");
-    if(!uv->isChecked() || !texture || !texture->isVisible()){qCritical("Texture workspace not visible");return 8;}
+    auto* overview=editor.findChild<UvFaceOverview*>("UvFaceOverview");
+    auto* atlas=editor.findChild<UvEditor*>("UvCanvas");
+    auto* faceDropdown=editor.findChild<QComboBox*>("UvFaceSelect");
+    auto* workspace=editor.findChild<QWidget*>("UVWorkspacePanel");
+    if(!uv->isChecked() || !texture || !texture->isVisible() || !overview || !atlas
+       || !faceDropdown || !workspace || !workspace->isVisible()){
+        qCritical("Full six-face UV workspace not visible");return 8;
+    }
+    QTest::mouseClick(overview,Qt::LeftButton,Qt::NoModifier,overview->faceCenter(4).toPoint());
+    if(faceDropdown->currentIndex()!=4 || overview->selectedFace()!=4){
+        qCritical("Selecting the Up face in the overview did not activate its independent UV mapping");return 15;
+    }
+    if(atlas->width()<260){qCritical("UV canvas is still constrained to a tiny dock");return 16;}
     model->click();QTest::qWait(180);
     if(argc>1 && !editor.grab().save(QString::fromLocal8Bit(argv[1]))){qCritical("Could not write UI screenshot");return 9;}
     qInfo("Editor UX test passed: Build, Model, UV, Outliner search and OpenGL");

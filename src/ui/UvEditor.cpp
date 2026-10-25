@@ -19,6 +19,11 @@ void UvEditor::updateExtent(){
     const auto extent=[&](double a,double b){return std::clamp(int(std::ceil(std::max({1.0,a,b}))),1,8);};
     tilesU_=extent(uv_[0],uv_[2]);tilesV_=extent(uv_[1],uv_[3]);
 }
+void UvEditor::setFaceOverlays(const std::array<OverlayFace,6>& faces,int activeFace){
+    overlays_=faces;
+    activeFace_=activeFace;
+    update();
+}
 void UvEditor::setRect(const std::array<double,4>& uv){
     uv_=uv;updateExtent();update();
 }
@@ -55,6 +60,22 @@ void UvEditor::paintEvent(QPaintEvent*){
     painter.setPen(QPen(QColor("#a7b4bf"),1));
     for(int x=0;x<=tilesU_;x++)painter.drawLine(toScreen(x,0),toScreen(x,tilesV_));
     for(int y=0;y<=tilesV_;y++)painter.drawLine(toScreen(0,y),toScreen(tilesU_,y));
+    // Other faces referencing this same texture are visible on the atlas,
+    // rather than hiding five of the six cuboid UV rectangles in a dropdown.
+    static const QColor accent[6]={
+        QColor("#f4a66a"),QColor("#59c6d5"),QColor("#b99ef5"),
+        QColor("#88c4fc"),QColor("#a5dc81"),QColor("#f5d07e")
+    };
+    static const char* initial[6]={"S","N","W","E","U","D"};
+    for(int i=0;i<6;i++){
+        if(i==activeFace_||!overlays_[std::size_t(i)].visible)continue;
+        const auto& uv=overlays_[std::size_t(i)].uv;
+        const QRectF other=QRectF(toScreen(uv[0],uv[1]),toScreen(uv[2],uv[3])).normalized();
+        painter.setPen(QPen(accent[i],1.5,Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(other);
+        painter.drawText(other.topLeft()+QPointF(4,14),initial[i]);
+    }
     const QRectF selection(toScreen(uv_[0],uv_[1]),toScreen(uv_[2],uv_[3]));
     painter.fillRect(selection.normalized(),QColor(243,165,70,48));
     painter.setPen(QPen(QColor("#ffbf6e"),2));

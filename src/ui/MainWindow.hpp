@@ -27,6 +27,7 @@ namespace studio {
 class LayerCanvas;
 class Viewport;
 class UvEditor;
+class UvFaceOverview;
 class StartPage;
 
 class MainWindow : public QMainWindow {
@@ -155,6 +156,8 @@ private:
     QCheckBox* visible_=nullptr;
     QDockWidget* textureDock_=nullptr;
     UvEditor* uvCanvas_=nullptr;
+    UvFaceOverview* uvFaceOverview_=nullptr;
+    QWidget* uvWorkspacePanel_=nullptr;
     QComboBox* uvFace_=nullptr;
     QComboBox* uvTexture_=nullptr;
     QDoubleSpinBox* uvNumbers_[4]{};

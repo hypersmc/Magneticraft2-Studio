@@ -13,7 +13,12 @@ class UvEditor final : public QWidget {
 public:
     explicit UvEditor(QWidget* parent=nullptr);
     void setImage(const QImage& image);
+    struct OverlayFace {
+        std::array<double,4> uv{0,0,1,1};
+        bool visible=false; // Only if using the same PNG as the selected face.
+    };
     void setRect(const std::array<double,4>& uv);
+    void setFaceOverlays(const std::array<OverlayFace,6>& faces,int activeFace);
     std::array<double,4> uv() const {return uv_;}
 signals:
     void editBegan();
@@ -30,6 +35,8 @@ private:
     QPointF toUv(const QPointF& p) const;
     void updateExtent();
     QImage image_;
+    std::array<OverlayFace,6> overlays_{};
+    int activeFace_=-1;
     std::array<double,4> uv_{0,0,1,1};
     std::array<double,4> initial_{};
     QPointF downUV_{};
