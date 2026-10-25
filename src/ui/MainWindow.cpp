@@ -706,6 +706,13 @@ void MainWindow::refreshRolePalette(){
 }
 void MainWindow::refreshPartTree(){
     QSignalBlocker blocker(tree_);
+    // Keep manually collapsed/expanded groups stable across edits, renames,
+    // selection changes and undo/redo; refreshing should not reopen everything.
+    std::map<std::string,bool> expansion;
+    for(int i=0;i<tree_->topLevelItemCount();++i){
+        const auto* item=tree_->topLevelItem(i);
+        expansion[item->text(0).toStdString()]=item->isExpanded();
+    }
     tree_->clear();
     std::map<std::string,QTreeWidgetItem*> groups;
     for(std::size_t i=0;i<project_.parts.size();i++){
@@ -715,7 +722,10 @@ void MainWindow::refreshPartTree(){
             auto* header=new QTreeWidgetItem(tree_);
             header->setText(0,q(group));
             header->setData(0,Qt::UserRole,-1);
-            header->setExpanded(true);
+            const auto old=expansion.find(group);
+            const bool first=groups.empty();
+            header->setExpanded(old!=expansion.end()?old->second:
+                (project_.parts.size()<30 || first));
             header->setForeground(0,QColor("#e5b483"));
             groups[group]=header;
         }
@@ -1100,7 +1110,25 @@ bool MainWindow::openOreWasherReference(){
     if(!result.error.isEmpty()){
         return fail("Cannot convert sample model",result.error);
     }
-    for(const auto& part:result.parts)example.parts.push_back(part);
+    // The source JSON has anonymous elements, not named components. Present
+    // a useful inferred hierarchy by source texture and geometry aspect ratio
+    // without pretending to reconstruct the original animation rig.
+    std::map<std::string,int> counts;
+    for(auto part:result.parts){
+        const QString texture=q(part.texture).toLower();
+        const QString category=texture.contains("copper")?"Copper":
+                               texture.contains("spruce")?"Spruce frame":
+                               texture.contains("oak")?"Oak timber":"Other";
+        const auto d=part.bounds.to-part.bounds.from;
+        std::array<double,3> sizes{{d.x,d.y,d.z}};
+        std::sort(sizes.begin(),sizes.end());
+        const QString shape=sizes[2]>3.0*std::max(0.125,sizes[1])?"Beam":
+                            sizes[0]<0.25*sizes[1]?"Panel":"Cuboid";
+        part.group=QString("Ore Washer / %1").arg(category).toStdString();
+        const int n=++counts[part.group];
+        part.name=QString("%1 %2").arg(shape).arg(n,3,10,QChar('0')).toStdString();
+        example.parts.push_back(std::move(part));
+    }
     example.name="Mechanical Ore Washer — Reference";
     example.notes="Imported from the actual Magneticraft2 model JSON (north). Static body only; "
                   "rotor, input pulley and animation are not automatically assembled.";
