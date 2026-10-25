@@ -27,6 +27,7 @@ public:
     void setSelection(int index);
     void setAxis(char axis);
     void setTool(char tool); // W = translate, E = rotate, R = scale
+    bool rendererReady() const { return glReady_; }
 signals:
     void partSelected(int index);
     void beginEdit();
