@@ -872,11 +872,26 @@ void MainWindow::refreshScene(){
         .arg(project_.dimensions[0]).arg(project_.dimensions[1]).arg(project_.dimensions[2])
         .arg(project_.cells.size()).arg(project_.parts.size());
     if(statusMetrics_)statusMetrics_->setText(detail+"  ");
-    if(sceneInfo_)sceneInfo_->setText(view.showFormed
-        ? (selected_>=0 && selected_<int(project_.parts.size())
-             ? q(project_.parts[std::size_t(selected_)].name)+"  ·  "+QString::number(project_.parts.size())+" parts"
-             : QString::number(project_.parts.size())+" model parts")
-        : "Layer "+QString::number(layer_+1)+" / "+QString::number(project_.dimensions[1]));
+    if(sceneInfo_) {
+        const bool staticReference=view.showFormed &&
+            project_.notes.find("Static body only")!=std::string::npos;
+        if(staticReference){
+            const int unresolved=missingTextureIds(project_).size();
+            sceneInfo_->setText(QString("STATIC BODY ONLY  ·  %1 missing PNG%2  ·  moving parts excluded")
+                .arg(unresolved).arg(unresolved==1?"":"s"));
+            sceneInfo_->setToolTip("Only the Ore Washer's 66 baked static cuboids are imported. "
+                "The in-game renderer separately draws the drum, pulleys, leather belt, water and items.");
+            sceneInfo_->setStyleSheet("color:#e2b17c; font-weight:600;");
+        }else{
+            sceneInfo_->setText(view.showFormed
+                ? (selected_>=0 && selected_<int(project_.parts.size())
+                    ? q(project_.parts[std::size_t(selected_)].name)+"  ·  "+QString::number(project_.parts.size())+" parts"
+                    : QString::number(project_.parts.size())+" model parts")
+                : "Layer "+QString::number(layer_+1)+" / "+QString::number(project_.dimensions[1]));
+            sceneInfo_->setToolTip({});
+            sceneInfo_->setStyleSheet({});
+        }
+    }
 }
 void MainWindow::updateTitle(){
     setWindowTitle(QString("%1%2  —  Magneticraft2 Studio")
