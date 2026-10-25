@@ -1,42 +1,10 @@
-# Magneticraft2 Studio — Native Linux editor v0.5 (design iteration)
-
-This is a **draft native editor**, not a finished Blockbench replacement. v0.5
-redesigns the workspaces around the modeling workflow. See
-[editor experience and Ore Washer acceptance exercise](docs/EDITOR_UX.md).
-
-### Running on Arch Linux
-
-```bash
-sudo pacman -S --needed base-devel cmake qt6-base qt6-wayland
-./run-linux.sh
-```
-
-### Workspaces
-
-- **BUILD:** construction layers, roles and controller placement.
-- **MODEL:** full-screen priority 3D viewport, tool rail, searchable Outliner,
-  selection inspector, material previews and numeric transforms.
-- **UV / TEXTURE:** the same model document with face-level UV editor and PNG import.
-
-File > Import Minecraft model JSON supports native Minecraft Java block-model
-`elements`, `from`/`to`, face textures/UVs and element axis rotations. It is
-specifically intended to help us bring in the real Ore Washer/Sifter geometry
-from Magneticraft2's resources; see the acceptance exercise for limitations.
-
-Use **F** to frame the model, **Shift+F** to frame the selected element,
-**V/B/W/E/R** for select/draw/move/rotate/resize and **Ctrl+I** to import a
-Minecraft model. Right-click any item in the Outliner to rename, hide, duplicate
-or frame it. Import PNG textures in the UV workspace.
-
----
-
 # Magneticraft2 Studio (Native Linux Alpha)
 
 A **native Qt 6 / C++17 / OpenGL 3.3** multiblock editor for Magneticraft2 (Minecraft Forge 1.20.1). This replaces the web-wrapper approach as the proposed Linux-first foundation. Windows support is deferred until the Linux experience is satisfactory.
 
 The `linux-alpha` branch preserves the original web prototype. The `native-linux` branch contains this independent native implementation. **Not a finished game renderer or full Blockbench replacement.**
 
-## Dedicated Model workspace (v0.5)
+## Dedicated Model workspace (v0.4)
 
 Choose **WORKSPACE → Model** to author the actual *formed machine*, independently
 of the construction blocks. The layer editor collapses so the GPU viewport
@@ -167,7 +135,7 @@ The UI and Forge exporter are separate from the project/geometry layer. A later 
 - Construction-only exports do not automatically yield a working formed multiblock in Forge. The mod's filler cell renderer will require a separate PR.
 
 
-## v0.5 native editing: gizmos and PNG / UV mapping
+## v0.4 native editing: gizmos and PNG / UV mapping
 
 The **Model** workspace has interactive RGB move/rotate/resize handles.
 - W **Move**: drag red/green/blue axis arrows; drag a tinted plane square for XY/XZ/YZ; drag the **white center** to move freely in a camera-facing plane.

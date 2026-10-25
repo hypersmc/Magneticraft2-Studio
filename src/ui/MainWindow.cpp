@@ -20,6 +20,7 @@
 #include <QImage>
 #include <QImageReader>
 #include <QFileInfo>
+#include <QTimer>
 #include <QPushButton>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -34,6 +35,7 @@
 #include <QDir>
 #include <QApplication>
 #include <QFileInfo>
+#include <QTimer>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
@@ -87,6 +89,11 @@ MainWindow::MainWindow(QWidget* parent):QMainWindow(parent),project_(makeDemo())
     else resize(1600,940);
     const QByteArray state=pref.value("window/v05/state").toByteArray();
     if(!state.isEmpty())restoreState(state);
+    else QTimer::singleShot(0,this,[this](){
+        auto* left=findChild<QDockWidget*>("PartsDock");
+        auto* right=findChild<QDockWidget*>("PropertiesDock");
+        if(left&&right)resizeDocks({left,right},{255,345},Qt::Horizontal);
+    });
     refreshAll();viewport_->resetCamera();
 }
 void MainWindow::buildUI(){
@@ -212,7 +219,7 @@ void MainWindow::buildUI(){
     inspector->setWidget(scroller);addDockWidget(Qt::RightDockWidgetArea,inspector);
     inspector->setMinimumWidth(300);
     createInspector();createTextureDock();
-    if(textureDock_)textureDock_->raise();
+    if(auto* props=findChild<QDockWidget*>("PropertiesDock"))props->raise();
     statusMetrics_=new QLabel(this);
     statusMetrics_->setObjectName("ProjectContext");
     statusBar()->addPermanentWidget(statusMetrics_);
@@ -339,12 +346,14 @@ void MainWindow::createTextureDock(){
     uvCanvas_=new UvEditor(panel);
     uvCanvas_->setObjectName("UvCanvas");
     layout->addWidget(uvCanvas_);
-    auto* controls=new QHBoxLayout;
+    auto* controls=new QGridLayout;
+    controls->setSpacing(6);
     auto* autoUV=new QPushButton("Auto UV",panel);
     auto* rotateUV=new QPushButton("Rotate 90°",panel);
     auto* flipU=new QPushButton("Flip U",panel);
     auto* flipV=new QPushButton("Flip V",panel);
-    for(auto* b:{autoUV,rotateUV,flipU,flipV})controls->addWidget(b);
+    controls->addWidget(autoUV,0,0);controls->addWidget(rotateUV,0,1);
+    controls->addWidget(flipU,1,0);controls->addWidget(flipV,1,1);
     layout->addLayout(controls);
     auto* uvForm=new QFormLayout;
     const char* labels[]={"U min","V min","U max","V max"};
@@ -506,6 +515,7 @@ void MainWindow::createMenus(){
     file->addAction("Save project",QKeySequence::Save,this,&MainWindow::save);
     file->addAction("Save project as...",QKeySequence::SaveAs,this,&MainWindow::saveAs);
     file->addSeparator();
+    file->addAction("Open Ore Washer reference project",this,&MainWindow::openOreWasherReference);
     file->addAction("Import Minecraft model JSON...",QKeySequence("Ctrl+I"),this,&MainWindow::importBlockModels);
     file->addAction("Import texture PNG...",this,&MainWindow::importPngTexture);
     file->addSeparator();
@@ -621,6 +631,9 @@ void MainWindow::createMenus(){
     railHint->setAlignment(Qt::AlignCenter);railHint->setObjectName("MicroLabel");
     railLayout_->addWidget(railHint);
 
+    // The contextual row must occupy its own line. On 1280px displays the
+    // previous combined header squeezed view/snap controls off-screen.
+    addToolBarBreak(Qt::TopToolBarArea);
     modelToolbar_=addToolBar("Modeling context");
     modelToolbar_->setObjectName("ModelAuthoringToolbar");
     modelToolbar_->setMovable(false);modelToolbar_->setFloatable(false);
@@ -1038,6 +1051,56 @@ void MainWindow::resizeDocument(){
     QString name=q(project_.name);Dimensions dims=project_.dimensions;
     if(!sizeDialog(this,"Resize Multiblock",name,dims,false))return;
     snapshot();studio::resize(project_,dims);selected_=-1;commitChanged();viewport_->resetCamera();
+}
+// Locate the sample both when running the source checkout and after an
+// installed CMake build. No network service or external installation is used.
+static QString bundledSample(const QString& relative){
+    const QDir cwd=QDir::current();
+    const QDir binary=QDir(QCoreApplication::applicationDirPath());
+    for(const auto& root:{cwd.absolutePath(),binary.absoluteFilePath(".."),
+                          binary.absoluteFilePath("../share/magneticraft2-studio")}){
+        const QString candidate=QDir(root).filePath("samples/"+relative);
+        if(QFileInfo::isFile(candidate))return candidate;
+    }
+    return {};
+}
+void MainWindow::openOreWasherReference(){
+    if(!maybeSave())return;
+    const QString structure=bundledSample("mechanical_ore_washer_north.json");
+    const QString model=bundledSample("ore_washer_models/mechanical_ore_washer_north.json");
+    if(structure.isEmpty()||model.isEmpty()){
+        QMessageBox::warning(this,"Sample files unavailable",
+            "The Ore Washer reference needs the samples/ folder shipped with Studio. "
+            "Run from the repository root or install the CMake sample data.");return;
+    }
+    LoadResult structureResult;QString error;
+    if(!ProjectIO::read(structure,structureResult,error)){
+        QMessageBox::warning(this,"Cannot open sample",error);return;
+    }
+    QFile modelFile(model);
+    if(!modelFile.open(QIODevice::ReadOnly)){
+        QMessageBox::warning(this,"Cannot open sample",modelFile.errorString());return;
+    }
+    auto example=std::move(structureResult.project);
+    Vec3 anchor{double(example.dimensions[0]/2),0,double(example.dimensions[2]/2)};
+    for(const auto& [cell,role]:example.cells){if(role=="Controller"){
+        anchor={double(cell.x),double(cell.y),double(cell.z)};break;
+    }}
+    const auto result=importBlockModel(modelFile.readAll(),example,"Ore Washer / Static body",anchor);
+    if(!result.error.isEmpty()){
+        QMessageBox::warning(this,"Cannot convert sample model",result.error);return;
+    }
+    for(const auto& part:result.parts)example.parts.push_back(part);
+    example.name="Mechanical Ore Washer — Reference";
+    example.notes="Imported from the actual Magneticraft2 model JSON (north). Static body only; "
+                  "rotor, input pulley and animation are not automatically assembled.";
+    uvImageKey_.clear();viewport_->invalidateTextures();
+    project_=std::move(example);loadedJson_=structureResult.original;
+    filename_.clear();dirty_=true;undo_.clear();redo_.clear();selected_=-1;layer_=0;
+    uvWorkspace_=false;mode_->setCurrentIndex(1);
+    refreshAll();viewport_->resetCamera();
+    statusBar()->showMessage(QString("Ore Washer static model imported: %1 editable cuboids; PNG references still need textures")
+            .arg(result.parts.size()),9000);
 }
 void MainWindow::openDialog(){
     if(!maybeSave())return;

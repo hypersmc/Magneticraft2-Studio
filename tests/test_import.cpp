@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <QFile>
 using namespace studio;
 int main(){
  const auto p=makeProject("Washer",{3,2,3});
@@ -19,5 +20,15 @@ int main(){
  assert(importBlockModel(R"({"parent":"minecraft:block/cube_all"})",p,"Parent",{}).parts.empty());
  const char* invalid=R"({"elements":[{"from":[4,4,4],"to":[0,5,5]}]})";
  assert(!importBlockModel(invalid,p,"Bad",{}).error.isEmpty());
+ #ifdef STUDIO_TEST_SOURCE_DIR
+ const QString path=QString(STUDIO_TEST_SOURCE_DIR)+"/samples/ore_washer_models/mechanical_ore_washer_north.json";
+ QFile original(path);
+ assert(original.open(QIODevice::ReadOnly));
+ const auto washer=importBlockModel(original.readAll(),p,"Real Ore Washer",{1,0,1});
+ if(!washer.error.isEmpty())std::cerr<<washer.error.toStdString()<<"\n";
+ assert(washer.error.isEmpty());
+ assert(washer.parts.size()>=20);
+ assert(washer.parts.front().group=="Real Ore Washer");
+ #endif
  std::cout<<"Minecraft Java model import tests passed\n";
 }

@@ -36,6 +36,7 @@ if(NOT STUDIO_HEADLESS_ONLY)
     install(TARGETS magneticraft2-studio RUNTIME DESTINATION bin)
     install(FILES packaging/magneticraft2-studio.desktop DESTINATION share/applications)
     install(FILES studio-icon.svg DESTINATION share/icons/hicolor/scalable/apps RENAME magneticraft2-studio.svg)
+    install(DIRECTORY samples/ DESTINATION share/magneticraft2-studio/samples)
 endif()
 
 if(STUDIO_BUILD_TESTS)
@@ -66,6 +67,7 @@ if(STUDIO_BUILD_TESTS)
         add_test(NAME studio-io-tests COMMAND studio-io-tests)
         add_executable(studio-import-tests tests/test_import.cpp src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp)
         target_link_libraries(studio-import-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
+        target_compile_definitions(studio-import-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-import-tests COMMAND studio-import-tests)
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp

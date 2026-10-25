@@ -31,18 +31,17 @@ The shipped demo is **not** the current real Ore Washer; it is an editable
 historical proof-of-concept. The acceptance test must therefore use the actual
 Forge resource files, not the demo:
 
-1. Open the 3x2x3 Ore Washer construction JSON via File > Open.
-2. Switch to Model > File > Import Minecraft model JSON.
-3. Import `mechanical_ore_washer_south.json` from
-   `src/main/resources/assets/magneticraft2/models/multiblock/` in the mod repo.
-   The importer anchors relative pixel-space geometry at the construction
-   controller; it handles the model's unusually large/negative coordinates.
-4. Use the Outliner search to locate and rename groups and inspect large numbers
+1. Use **File > Open Ore Washer reference project** to load the actual 3×2×3
+   construction layout and static `mechanical_ore_washer_north.json` model
+   from the bundled samples (origin: the Magneticraft2 mod repository).
+2. The importer anchors pixel-space geometry to the build controller;
+   it handles the model's unusually large/negative coordinates.
+3. Use the Outliner search to locate and rename groups and inspect large numbers
    of elements. Move a beam with the gizmo; verify snapping and undo/redo.
-5. Import matching PNG textures from the mod and inspect face UVs.
-6. Save/reopen the Studio project. Verify geometry, selection, references, and
+4. Import matching PNG textures from the mod and inspect face UVs.
+5. Save/reopen the Studio project. Verify geometry, selection, references, and
    the edited UVs persist.
-7. Load the rotor model as a **separate group**. Pivot and motion import/creation
+6. Load the bundled rotor and input-pulley JSONs as **separate groups**. Pivot and motion import/creation
    is a follow-up milestone, not silently assumed from a baked model.
 
 ## Known limitations (do not overstate)
@@ -65,3 +64,12 @@ Forge resource files, not the demo:
 - Multi-select, true group transforms, keyboard transform entry and align tools.
 - Texture atlas/library and paint workflow using actual Magneticraft2 assets.
 - Safe, validated tiled model export to the Forge mod (separate integration PR).
+
+Bundled model source references:
+- `samples/ore_washer_models/mechanical_ore_washer_north.json`
+- `samples/ore_washer_models/mechanical_ore_washer_rotor.json`
+- `samples/ore_washer_models/mechanical_ore_washer_input_pulley.json`
+
+They are copied from the user's `hypersmc/magneticraft2-1.20.x` repository;
+they are not recreated approximations. The dynamic renderer's additional runtime
+transforms remain separate and are **not** inferred by the JSON importer.

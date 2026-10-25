@@ -46,12 +46,15 @@ int main(int argc,char** argv) {
     studio::MainWindow window;
     bool smoke=false;
     QString screenshot;
+    bool sampleWasher=false;
     for(int i=1;i<argc;i++){
         const QString argument=QString::fromLocal8Bit(argv[i]);
         if(argument=="--smoke")smoke=true;
+        else if(argument=="--sample-washer")sampleWasher=true;
         else if(argument=="--screenshot" && i+1<argc)screenshot=QString::fromLocal8Bit(argv[++i]);
         else if(QFileInfo::exists(argument))window.openPath(argument);
     }
+    if(sampleWasher)window.openOreWasherReference();
     window.show();
     if(smoke) {
         QTimer::singleShot(1600,&app,[&](){
