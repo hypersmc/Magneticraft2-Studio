@@ -1,4 +1,5 @@
 #include "ui/MainWindow.hpp"
+#include "ui/Theme.hpp"
 #include "ui/StartPage.hpp"
 #include <QPushButton>
 #include "ui/Viewport.hpp"
@@ -17,6 +18,7 @@
 using namespace studio;
 int main(int argc,char** argv){
     QApplication app(argc,argv);
+    app.setStyleSheet(studio::editorStyle);
     MainWindow editor;
     editor.resize(1600,940);editor.show();
     QTest::qWait(240);
