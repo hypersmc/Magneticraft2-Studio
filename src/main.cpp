@@ -71,5 +71,7 @@ int main(int argc,char** argv) {
             app.quit();
         });
     }
-    return app.exec();
+    const int code=app.exec();
+    qInfo("Studio: Qt event loop returned with code %d",code);
+    return code;
 }

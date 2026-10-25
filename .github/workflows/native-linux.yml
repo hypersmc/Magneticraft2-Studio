@@ -26,7 +26,7 @@ jobs:
       - name: Native transform gizmo and UV editor interaction test
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-gizmos-uv-tests build/studio-textured.png
       - name: Ore Washer reference model import screenshot
-        run: timeout 30s env LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --sample-washer --smoke --screenshot build/studio-washer.png
+        run: timeout 20s env LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --sample-washer --smoke --screenshot build/studio-washer.png
       - name: Native editor UX smoke test (workspaces/outliner)
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-editor-ui-tests build/studio-editor-ux.png
       - name: Preserve GUI preview

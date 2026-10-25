@@ -70,9 +70,11 @@ Viewport::Viewport(QWidget* parent):QOpenGLWidget(parent),mailbox_(std::make_sha
     updateHud();
 }
 Viewport::~Viewport(){
+    qInfo("Studio: viewport destructor starting");
     poll_.stop();
     mailbox_->generation.fetch_add(1);
     pool_.waitForDone();
+    qInfo("Studio: viewport mesh worker stopped");
     if(glReady_ && context()) {
         makeCurrent();
         textureCache_.clear();
@@ -80,6 +82,7 @@ Viewport::~Viewport(){
         shader_.removeAllShaders();
         doneCurrent();
     }
+    qInfo("Studio: viewport destructor completed");
 }
 void Viewport::setScene(const Project& document,BuildOptions options){
     if(document_.textures.size()!=document.textures.size())texturesDirty_=true;
