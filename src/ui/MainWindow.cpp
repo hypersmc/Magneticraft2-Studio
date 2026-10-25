@@ -747,6 +747,7 @@ void MainWindow::createMenus(){
         uvWorkspace_=false;mode_->setCurrentIndex(1);
         if(auto* p=findChild<QDockWidget*>("PropertiesDock"))p->raise();
         switchWorkspace();
+        QTimer::singleShot(0,viewport_,&Viewport::resetCamera);
     });
     connect(workspaceUV_,&QToolButton::clicked,this,[this](){
         uvWorkspace_=true;mode_->setCurrentIndex(1);
@@ -755,6 +756,7 @@ void MainWindow::createMenus(){
         if(select>=0)tool_->setCurrentIndex(select);
         if(textureDock_)textureDock_->raise();
         switchWorkspace();
+        QTimer::singleShot(0,viewport_,&Viewport::resetCamera);
     });
     header->addSeparator();
     auto* homeButton=new QPushButton("Home",this);
