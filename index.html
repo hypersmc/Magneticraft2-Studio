@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#111920" />
+  <title>Magneticraft2 Studio — Linux Alpha</title>
+  <link rel="stylesheet" href="src/style.css" />
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><div class="brand-icon" aria-hidden="true"><span>⬡</span></div><div class="brand-copy"><b>MAGNETICRAFT<span class="accent">2</span></b><small>STUDIO <span>·</span> MULTIBLOCK EDITOR</small></div></div>
+    <div class="top-tabs" role="tablist" aria-label="Editor mode">
+      <button class="mode-tab active" data-mode="build" title="B · Structure">▦ <span>Structure</span></button>
+      <button class="mode-tab" data-mode="model" title="M · Formed model">◈ <span>Formed model</span></button>
+      <button class="mode-tab" data-mode="motion" title="A · Motion">◷ <span>Motion</span></button>
+    </div>
+    <div class="top-actions"><span class="platform-chip">● LINUX FIRST</span><span class="version-chip">ALPHA 0.1</span></div>
+  </header>
+  <div class="toolbar">
+    <div class="project-name" id="project-name">Workshop Ore Washer</div>
+    <span class="project-dim" id="project-dim">5 × 3 × 5</span>
+    <span class="toolbar-separator"></span>
+    <button id="btn-new" class="subtle-btn" title="Create a new multiblock">＋ New</button>
+    <button id="btn-open" class="subtle-btn" title="Open a Studio document or Magneticraft construction JSON">↥ Open</button>
+    <button id="btn-save" class="subtle-btn" title="Download editable project JSON (Ctrl+S)">↓ Save</button>
+    <div class="toolbar-spacer"></div>
+    <button id="btn-fit" class="subtle-btn" title="Fit all (F)">⤢ Fit</button>
+    <button id="btn-export" class="primary-btn" title="Export Forge structure, sliced static models and manifest">Export for Forge <span>↗</span></button>
+  </div>
+  <div class="workspace">
+    <aside class="left-sidebar" id="left-sidebar" aria-label="Object explorer"></aside>
+    <main class="center-pane">
+      <section class="viewport-shell">
+        <canvas id="viewport" role="img" aria-label="Interactive isometric 3D multiblock preview"></canvas>
+        <div class="viewport-top">
+          <span class="viewport-label"><span class="vp-dot"></span> <span id="viewport-mode">CONSTRUCTION VIEW</span></span>
+          <div class="viewport-actions"><label class="view-check" id="show-all-wrap"><input id="toggle-all" type="checkbox"/> Show all layers</label><label class="view-check hide" id="ghost-wrap"><input id="toggle-ghost" type="checkbox"/> Ghost structure</label></div>
+        </div>
+        <div class="viewport-bottom"><span id="viewport-help">DRAG TO ORBIT · SHIFT+DRAG TO PAN · SCROLL TO ZOOM · CLICK TO PAINT</span></div>
+      </section>
+      <section class="bottom-pane" id="bottom-pane" aria-label="Construction editor">
+        <div class="dock-head"><span class="dock-label">LAYER WORKSPACE <span id="layer-label">Y = 0</span></span><div class="dock-actions" id="dock-actions"></div></div>
+        <div class="dock-body"><div class="grid-area" id="layer-grid" aria-label="2D layer paint grid"></div><div class="dock-side" id="dock-side"></div></div>
+      </section>
+    </main>
+    <aside class="right-sidebar" id="right-sidebar" aria-label="Properties inspector"></aside>
+  </div>
+  <footer class="statusbar"><span class="connection"><span class="signal-dot"></span> LOCAL · OFFLINE</span><span id="status-message">READY</span><span class="status-spacer"></span><span id="status-data">0 MODEL PARTS</span><span class="status-version">MCRAFT STUDIO V0.1</span></footer>
+</div>
+<input id="file-open" type="file" accept=".json,.mcraftstudio,.mcraftstudio.json,application/json" hidden />
+<dialog id="new-modal" class="modal"><form method="dialog" id="new-form"><div class="modal-title">Create a multiblock <button type="button" id="new-close" class="bare-btn" aria-label="Close">✕</button></div><p>Start with any size. Coordinates are in full Minecraft blocks; model geometry can be edited at 1/16-block precision.</p><label>Machine name<input type="text" id="new-name" value="New Machine" required maxlength="80" /></label><div class="modal-dims"><label>Width (X)<input type="number" id="new-x" min="1" max="128" value="7" required /></label><label>Height (Y)<input type="number" id="new-y" min="1" max="128" value="5" required /></label><label>Depth (Z)<input type="number" id="new-z" min="1" max="128" value="9" required /></label></div><p class="muted small">The dense JSON exporter has a 150,000-cell safety limit in this alpha. The editor itself uses sparse cells.</p><div class="modal-buttons"><button value="cancel" type="button" class="subtle-btn" id="new-cancel">Cancel</button><button value="create" type="submit" class="primary-btn">Create workspace</button></div></form></dialog>
+<div id="toast-container" aria-live="polite"></div>
+<script type="module" src="src/app.mjs"></script>
+</body>
+</html>
