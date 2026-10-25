@@ -1060,7 +1060,7 @@ static QString bundledSample(const QString& relative){
     for(const auto& root:{cwd.absolutePath(),binary.absoluteFilePath(".."),
                           binary.absoluteFilePath("../share/magneticraft2-studio")}){
         const QString candidate=QDir(root).filePath("samples/"+relative);
-        if(QFileInfo::isFile(candidate))return candidate;
+        if(QFileInfo(candidate).isFile())return candidate;
     }
     return {};
 }
