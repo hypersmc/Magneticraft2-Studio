@@ -1,4 +1,5 @@
 #include "io/ProjectIO.hpp"
+#include "io/AnimationExport.hpp"
 #include <QCoreApplication>
 #include <QImage>
 #include <QBuffer>
@@ -75,6 +76,68 @@ int main(int argc,char**argv) {
     block.parts.front().bounds.to.x=3.0625;
     assert(!ProjectIO::exportJavaBlockModel(modelFile,block,err));
     assert(!ProjectIO::write(temp.filePath("invalid.json"),block,{},err));
+    // The native editor preserves animation metadata until the full motion
+    // timeline exists. The export-only bridge must produce the EXACT typed
+    // schema consumed by Forge without fabricating baked model geometry.
+    Project rig=makeDemo();
+    assert(rig.parts.size()>=2);
+    rig.parts[0].motionId="shaft";
+    rig.parts[1].motionId="shaft";
+    QJsonObject rigProject=ProjectIO::encode(rig);
+    QJsonArray rigParts=rigProject.value("parts").toArray();
+    QJsonObject rootPart=rigParts[0].toObject();
+    rootPart["animation"]=QJsonObject{
+        {"model","magneticraft2:animated/input_shaft"},
+        {"model_offset",QJsonArray{0.0,0.0,-2.0}},
+        {"pivot",QJsonArray{0.5,0.5,0.5}}
+    };
+    rigParts[0]=rootPart;
+    QJsonObject childPart=rigParts[1].toObject();
+    childPart["animation"]=QJsonObject{
+        {"model","magneticraft2:animated/shaft_marker"},
+        {"model_offset",QJsonArray{0.0,0.0,0.0}},
+        {"pivot",QJsonArray{0.0,0.0,0.0}},
+        {"parent",QString::fromStdString(rig.parts[0].id)},
+        {"visible_when","running"}
+    };
+    rigParts[1]=childPart;
+    rigProject["parts"]=rigParts;
+    rigProject["motions"]=QJsonArray{QJsonObject{
+        {"id","shaft"},{"type","rotate"},{"axis","z"},
+        {"driver_source","mechanical.visual_angle_degrees"},
+        {"driver_module","mechanical_input"},{"scale",-1.0},
+        {"speed",15.0} // Legacy Studio speed MUST NOT become Gear V2 RPM.
+    }};
+    LoadResult rigLoaded; assert(ProjectIO::decode(
+        QJsonDocument(rigProject).toJson(),rigLoaded,err));
+    QJsonObject animation;
+    assert(AnimationExport::build(rigLoaded.project,rigLoaded.original,animation,err));
+    assert(animation.value("format").toString()=="magneticraft2:visual_animation");
+    assert(animation.value("format_version").toInt()==1);
+    const QJsonObject rigComponents=animation.value("components").toObject();
+    assert(rigComponents.size()==2);
+    assert(rigComponents.value(QString::fromStdString(rig.parts[1].id))
+        .toObject().value("parent").toString()==QString::fromStdString(rig.parts[0].id));
+    const QJsonObject driven=animation.value("animations").toObject()
+        .value("driven_shaft").toObject();
+    assert(driven.value("tracks").toArray().size()==2);
+    assert(driven.value("tracks").toArray().at(0).toObject().value("scale").toDouble()==-1.0);
+    assert(AnimationExport::write(
+        temp.filePath("bronze_mechanical_lathe.json"),
+        rigLoaded.project,rigLoaded.original,err));
+    QFile animationFile(temp.filePath("bronze_mechanical_lathe.json"));
+    assert(animationFile.open(QIODevice::ReadOnly));
+    assert(QJsonDocument::fromJson(animationFile.readAll()).object()==animation);
+    // A typo in a parent chain must fail before writing a misleading asset.
+    QJsonObject broken=rigLoaded.original;
+    QJsonArray brokenParts=broken.value("parts").toArray();
+    QJsonObject brokenChild=brokenParts[1].toObject();
+    QJsonObject brokenBinding=brokenChild.value("animation").toObject();
+    brokenBinding["parent"]="not_a_real_component";
+    brokenChild["animation"]=brokenBinding;
+    brokenParts[1]=brokenChild;broken["parts"]=brokenParts;
+    assert(!AnimationExport::build(rigLoaded.project,broken,animation,err));
+    assert(err.contains("Unknown parent"));
     std::cout<<"Native Qt JSON IO tests passed\n";
     return 0;
 }
