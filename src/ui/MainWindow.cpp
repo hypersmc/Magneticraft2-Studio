@@ -5,6 +5,7 @@
 #include "Viewport.hpp"
 #include "StartPage.hpp"
 #include "io/ProjectIO.hpp"
+#include "io/AnimationExport.hpp"
 #include "io/BlockModelImport.hpp"
 #include "io/TextureAssets.hpp"
 #include "core/Modeling.hpp"
@@ -680,6 +681,21 @@ void MainWindow::createMenus(){
     file->addAction("Load unpacked texture assets folder...",this,&MainWindow::importMinecraftAssetFolder);
     file->addSeparator();
     file->addAction("Export project...",this,&MainWindow::exportDialog);
+    file->addAction("Export Magneticraft2 animation JSON...",this,[this]() {
+        const QString filename=QFileDialog::getSaveFileName(this,
+            "Export animation definition", q(project_.id)+".json",
+            "Magneticraft2 animation JSON (*.json)");
+        if(filename.isEmpty())return;
+        QString error;
+        if(!AnimationExport::write(filename,project_,loadedJson_,error)) {
+            QMessageBox::warning(this,"Animation export failed",error);
+            return;
+        }
+        QMessageBox::information(this,"Animation definition exported",
+            "The JSON binds named components to existing Minecraft model resource IDs "
+            "and Gear V2 motion inputs. Studio has NOT generated the animated meshes "
+            "or implemented a full animation preview.");
+    });
     file->addSeparator();file->addAction("Quit",QKeySequence::Quit,this,&QWidget::close);
 
     auto* edit=menuBar()->addMenu("&Edit");
