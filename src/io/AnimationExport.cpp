@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QStringList>
 
 #include <cmath>
 #include <map>
