@@ -30,6 +30,20 @@ set **VIEW = Top**, **PLANE Y = 1**, **HEIGHT = 1/4**, **SNAP = 1/16**,
 and drag in the viewport. Then select the beam and resize it with the handles.
 Save and reopen the `.mcraftstudio.json` project to verify it persists.
 
+## Magneticraft2 JSON animations (export-only bridge)
+
+**File → Export Magneticraft2 animation JSON…** exports explicit named model
+bindings and typed Gear V2 driven-rotation tracks from saved Studio project
+metadata. The output uses the same `magneticraft2:visual_animation` v1 format
+as the Java mod's `feature/json-driven-animation` branch.
+
+The editor **does not yet generate animated meshes, provide a working motion
+timeline, or preview these animated joints**. Explicit `animation` metadata
+for each Part and a top-level `motions` entry must currently be authored in
+the Studio project's JSON. Model resource locations must resolve to already
+available baked Minecraft models. See [Animation Export](docs/ANIMATION_EXPORT.md)
+for the exact contract, example and limitations.
+
 ## Arch Linux / KDE: build and run
 
 Install build dependencies:
