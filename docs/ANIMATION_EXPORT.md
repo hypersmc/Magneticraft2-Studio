@@ -100,7 +100,7 @@ applies, while `visible_when` controls component visibility.
 
 ## Validation and limits
 
-The exporter rejects missing model references for a driven Part, unknown
+The exporter rejects absent explicit bindings for a Part with a motion ID, unknown
 motion IDs, unsupported drivers/axes, malformed coordinates, duplicate IDs,
 invalid/recursive parents and extreme multipliers. It writes atomically and
 does not change server multiblock, V2 static models, voxel collision, or recipes.
