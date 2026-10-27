@@ -11,6 +11,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPlainTextEdit>
