@@ -424,4 +424,102 @@ bool VisualContract::exportPair(const QString& directory,const QString& machine,
     if(!writeFile(scenePath,scene,error))return false;
     return writeFile(manifestPath,manifest,error);
 }
+
+QJsonObject VisualContract::sample(const QJsonObject& manifest,const QJsonObject& scene,
+                 const QMap<QString,double>& physicalAngles,bool running,bool overloaded,
+                 bool worn,int wearStage,QString& error){
+    const QString machine=manifest.value("_studio_machine").toString();
+    QStringList warnings;
+    if(machine.isEmpty() ? !validateScene(scene,error)
+       : !validatePair(machine,manifest,scene,error,&warnings))return {};
+    QMap<QString,double> angles;
+    const auto aliases=manifest.value("angle_channels").toObject();
+    const auto inputs=scene.value("inputs").toObject();
+    for(auto it=inputs.begin();it!=inputs.end();++it){
+        const QString alias=it.value().toObject().value("module").toString();
+        const QString source=aliases.value(alias).toString();
+        if(!physicalAngles.contains(source)||!std::isfinite(physicalAngles.value(source))){
+            fail(error,"Missing finite physical preview source: "+source);return {};
+        }
+        angles[it.key()]=physicalAngles.value(source);
+    }
+    QMap<QString,QJsonObject> chosen;
+    QMap<QString,int> chosenRotation,chosenTranslation;
+    const auto animations=scene.value("animations").toObject();
+    for(auto it=animations.begin();it!=animations.end();++it){
+        for(const auto& raw:it.value().toObject().value("tracks").toArray()){
+            const auto track=raw.toObject();
+            const QString when=track.value("when").toString("always");
+            if(!isActive(when,running,overloaded,worn))continue;
+            const QString target=track.value("target").toString();
+            const bool rotation=track.value("property")=="rotation";
+            auto& priorities=rotation?chosenRotation:chosenTranslation;
+            if(priorities.value(target)>=priority(when))continue;
+            priorities[target]=priority(when);
+            const double degrees=angles.value(track.value("input").toString())*
+                track.value("scale").toDouble(1)+track.value("phase_degrees").toDouble();
+            const auto value=track.value("axis");
+            QString axisName;int sign=1;
+            if(value.isString()){
+                axisName=value.toString();
+                if(axisName.startsWith('-')){sign=-1;axisName.remove(0,1);}
+            }else{
+                const auto array=value.toArray();
+                for(int k=0;k<3;k++)if(array[k].toDouble()!=0){
+                    axisName=QString("xyz").mid(k,1);
+                    sign=array[k].toDouble()<0?-1:1;break;
+                }
+            }
+            auto output=chosen.value(target);
+            if(rotation)output["rotation"]=QJsonObject{{"axis",axisName},{"degrees",sign*degrees}};
+            else{
+                const double wave=track.value("waveform")=="cosine"
+                    ?std::cos(degrees*3.141592653589793/180.0)
+                    :std::sin(degrees*3.141592653589793/180.0);
+                const double travel=track.value("distance").toDouble()*
+                  (track.value("bias").toDouble(0)+track.value("amplitude").toDouble(1)*wave);
+                output["translation"]=QJsonObject{{"axis",axisName},{"blocks",sign*travel}};
+            }
+            chosen[target]=output;
+        }
+    }
+    QJsonObject mechanisms;
+    const auto defs=scene.value("mechanisms").toObject();
+    for(auto it=defs.begin();it!=defs.end();++it){
+        const auto m=it.value().toObject();
+        const double r=m.value("radius").toDouble(),length=m.value("rod_length").toDouble();
+        const double angle=angles.value(m.value("input").toString())+m.value("phase_degrees").toDouble();
+        const double theta=angle*3.141592653589793/180.0;
+        const auto center=m.value("center").toArray();
+        const double cy=center[1].toDouble(),cz=center[2].toDouble();
+        const double lateral=r*std::cos(theta),pinY=cy+lateral,pinZ=cz+r*std::sin(theta);
+        const double followerZ=pinZ+std::sqrt(length*length-lateral*lateral);
+        mechanisms[it.key()]=QJsonObject{
+            {"crank_angle_degrees",angle},{"pin_y",pinY},{"pin_z",pinZ},
+            {"rod_angle_degrees",std::asin(lateral/length)*180.0/3.141592653589793},
+            {"follower_z",followerZ},{"stroke_z",followerZ-cz-length}};
+    }
+    const auto comps=scene.value("components").toObject();
+    QJsonObject out;
+    for(auto it=comps.begin();it!=comps.end();++it){
+        const auto part=it.value().toObject();
+        auto pose=chosen.value(it.key());
+        pose["visible"]=isActive(part.value("visible_when").toString("always"),running,overloaded,worn);
+        pose["model"]=part.value("model");
+        const auto variants=part.value("model_variants").toObject();
+        if(!variants.isEmpty()){
+            const auto variant=variants.value("models").toObject().value(QString::number(wearStage));
+            if(!variant.isUndefined())pose["model"]=variant;
+        }
+        pose["model_offset"]=part.value("model_offset");
+        pose["pivot"]=part.value("pivot");
+        if(part.contains("parent"))pose["parent"]=part.value("parent");
+        if(part.contains("static_rotation"))pose["static_rotation"]=part.value("static_rotation");
+        out[it.key()]=pose;
+    }
+    error.clear();
+    return QJsonObject{{"components",out},{"mechanisms",mechanisms},
+       {"states",QJsonObject{{"running",running},{"overloaded",overloaded},{"worn",worn}}},
+       {"wear_stage",wearStage}};
+}
 }
