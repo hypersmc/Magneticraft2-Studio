@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <utility>
 
 namespace studio {
 namespace {
@@ -119,13 +120,38 @@ int priority(const QString& when){
 // belt previews in Minecraft before claiming identical tessellation.
 double estimatedBeltTiles(const QJsonObject& b){
     const QVector3D a=xyz(b.value("start_center")),z=xyz(b.value("end_center"));
+    const QVector3D run=(z-a).normalized();
+    const QString axis=b.value("rotation_axis").toString();
+    const QVector3D axisVector=axis=="x"?QVector3D(1,0,0)
+          :axis=="y"?QVector3D(0,1,0):QVector3D(0,0,1);
+    const QVector3D side=QVector3D::crossProduct(axisVector,run).normalized();
     const double d=double((z-a).length()),r=b.value("start_radius").toDouble(),
-        R=b.value("end_radius").toDouble(),delta=r-R;
-    const double alpha=std::asin(std::clamp(delta/d,-1.0,1.0));
-    const double l=2.0*std::sqrt(std::max(0.0,d*d-delta*delta))
-         + 3.141592653589793*(r+R)+2.0*delta*alpha;
-    // conservative 2 straight pieces + 2*ceil(32) arc pieces.
-    return 66.0+l/b.value("texture_repeat").toDouble()+1.0;
+          R=b.value("end_radius").toDouble(),delta=(r-R)/d;
+    const double tangent=std::sqrt(std::max(0.0,1.0-delta*delta));
+    const QVector3D top=(run*float(delta)+side*float(tangent)).normalized();
+    const QVector3D bottom=(run*float(delta)-side*float(tangent)).normalized();
+    const double straight=2.0*std::sqrt(d*d-(r-R)*(r-R));
+    auto dot=[](QVector3D x,QVector3D y){return double(QVector3D::dotProduct(x,y));};
+    auto radial=[&](double angle){return run*float(std::cos(angle))+side*float(std::sin(angle));};
+    auto arc=[&](QVector3D from,QVector3D to,QVector3D outward,double radius){
+        const double a0=std::atan2(dot(from,side),dot(from,run)),
+             a1=std::atan2(dot(to,side),dot(to,run));
+        double shortDelta=a1-a0;
+        const double pi=3.141592653589793;
+        while(shortDelta<=-pi)shortDelta+=2*pi;
+        while(shortDelta>pi)shortDelta-=2*pi;
+        const double longDelta=shortDelta>=0?shortDelta-2*pi:shortDelta+2*pi;
+        const double scoreShort=dot(radial(a0+shortDelta*0.5),outward);
+        const double scoreLong=dot(radial(a0+longDelta*0.5),outward);
+        const double span=scoreLong>scoreShort?longDelta:shortDelta;
+        const int segments=std::max(4,int(std::ceil(16*std::abs(span)/pi)));
+        const double length=2*radius*std::sin(std::abs(span)/(2*segments))*segments;
+        return std::pair<int,double>(segments,length);
+    };
+    const auto endArc=arc(top,bottom,run,R),startArc=arc(bottom,top,-run,r);
+    const int segmentCount=2+endArc.first+startArc.first;
+    const double distance=straight+endArc.second+startArc.second;
+    return segmentCount+distance/b.value("texture_repeat").toDouble()+1.0;
 }
 }
 QStringList VisualContract::availableAngles(const QString& machine){
@@ -499,6 +525,17 @@ QJsonObject VisualContract::sample(const QJsonObject& manifest,const QJsonObject
             {"rod_angle_degrees",std::asin(lateral/length)*180.0/3.141592653589793},
             {"follower_z",followerZ},{"stroke_z",followerZ-cz-length}};
     }
+    QJsonObject belts;
+    const auto beltDefinitions=scene.value("belt_loops").toObject();
+    for(auto it=beltDefinitions.begin();it!=beltDefinitions.end();++it){
+        const auto b=it.value().toObject();
+        const double shaftDegrees=angles.value(b.value("input").toString());
+        const double distance=shaftDegrees*3.141592653589793/180.0*
+            b.value("drive_radius").toDouble(b.value("start_radius").toDouble())*
+            b.value("speed_scale").toDouble(1)+b.value("texture_offset").toDouble();
+        belts[it.key()]=QJsonObject{{"surface_distance_blocks",distance},
+             {"repeat_blocks",b.value("texture_repeat")},{"texture",b.value("texture")}};
+    }
     const auto comps=scene.value("components").toObject();
     QJsonObject out;
     for(auto it=comps.begin();it!=comps.end();++it){
@@ -518,7 +555,7 @@ QJsonObject VisualContract::sample(const QJsonObject& manifest,const QJsonObject
         out[it.key()]=pose;
     }
     error.clear();
-    return QJsonObject{{"components",out},{"mechanisms",mechanisms},
+    return QJsonObject{{"components",out},{"mechanisms",mechanisms},{"belt_loops",belts},
        {"states",QJsonObject{{"running",running},{"overloaded",overloaded},{"worn",worn}}},
        {"wear_stage",wearStage}};
 }
