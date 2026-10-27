@@ -346,7 +346,8 @@ bool VisualContract::validateScene(const QJsonObject& s,QString& error){
         const double span=double((to-from).length());
         if(span<0.125||span>16||span<=std::abs(r-R))
             return fail(error,it.key()+": belt span/radii invalid");
-        const auto direction=(to-from).normalized(),ax=b.value("rotation_axis").toString();
+        const QVector3D direction=(to-from).normalized();
+        const QString ax=b.value("rotation_axis").toString();
         const QVector3D principal=ax=="x"?QVector3D(1,0,0):ax=="y"?QVector3D(0,1,0):QVector3D(0,0,1);
         if(QVector3D::crossProduct(principal,direction).lengthSquared()<0.0001)
             return fail(error,it.key()+": belt pulley axis is parallel to center line");
