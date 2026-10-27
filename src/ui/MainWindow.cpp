@@ -6,6 +6,7 @@
 #include "StartPage.hpp"
 #include "io/ProjectIO.hpp"
 #include "io/AnimationExport.hpp"
+#include "VisualRuntimeDialog.hpp"
 #include "io/BlockModelImport.hpp"
 #include "io/TextureAssets.hpp"
 #include "core/Modeling.hpp"
@@ -681,6 +682,17 @@ void MainWindow::createMenus(){
     file->addAction("Load unpacked texture assets folder...",this,&MainWindow::importMinecraftAssetFolder);
     file->addSeparator();
     file->addAction("Export project...",this,&MainWindow::exportDialog);
+    file->addAction("Edit Machine Visual JSON (runtime v1)...",this,[this](){
+        if(project_.kind!=ProjectKind::Multiblock){
+            QMessageBox::information(this,"Machine visuals require a multiblock",
+               "Java block models cannot define a functional Magneticraft2 machine renderer.");return;
+        }
+        VisualRuntimeDialog dialog(loadedJson_.value("visualRuntime").toObject(),this);
+        if(dialog.exec()!=QDialog::Accepted)return;
+        loadedJson_["visualRuntime"]=dialog.metadata();
+        dirty_=true;updateTitle();
+        statusBar()->showMessage("Machine visual JSON saved in this Studio project",6500);
+    });
     file->addAction("Export Magneticraft2 animation JSON...",this,[this]() {
         const QString filename=QFileDialog::getSaveFileName(this,
             "Export animation definition", q(project_.id)+".json",

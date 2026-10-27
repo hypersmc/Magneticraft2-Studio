@@ -32,6 +32,7 @@ if(NOT STUDIO_HEADLESS_ONLY)
         src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
         src/io/TextureAssets.hpp src/io/TextureAssets.cpp
         src/ui/MainWindow.hpp src/ui/MainWindow.cpp
+        src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
         src/ui/StartPage.hpp src/ui/StartPage.cpp
         src/ui/Viewport.hpp src/ui/Viewport.cpp
         src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
