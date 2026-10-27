@@ -79,7 +79,7 @@ if(STUDIO_BUILD_TESTS)
 
         add_executable(studio-visual-contract-tests tests/test_visual_contract.cpp
             src/io/VisualContract.hpp src/io/VisualContract.cpp)
-        target_link_libraries(studio-visual-contract-tests PRIVATE Qt6::Core Qt6::Gui)
+        target_link_libraries(studio-visual-contract-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-visual-contract-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-visual-contract-tests COMMAND studio-visual-contract-tests)
 
