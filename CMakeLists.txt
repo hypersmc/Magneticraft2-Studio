@@ -95,6 +95,8 @@ if(STUDIO_BUILD_TESTS)
         target_link_libraries(studio-uv-overview-tests PRIVATE studio_core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
+            src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
+            src/io/VisualContract.hpp src/io/VisualContract.cpp
             src/ui/StartPage.hpp src/ui/StartPage.cpp
             src/ui/Viewport.hpp src/ui/Viewport.cpp
             src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
