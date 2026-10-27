@@ -138,6 +138,30 @@ int main(int argc,char**argv) {
     brokenParts[1]=brokenChild;broken["parts"]=brokenParts;
     assert(!AnimationExport::build(rigLoaded.project,broken,animation,err));
     assert(err.contains("Unknown parent"));
+    // Optional v1 animation metadata must survive old Studio document edits,
+    // including unknown schema fields that the native project does not own.
+    QJsonObject oldDocument=ProjectIO::encode(makeDemo());
+    oldDocument.remove("visualRuntime");
+    LoadResult oldLoaded;
+    assert(ProjectIO::decode(QJsonDocument(oldDocument).toJson(),oldLoaded,err));
+    assert(!ProjectIO::encode(oldLoaded.project,oldLoaded.original).contains("visualRuntime"));
+    QJsonObject visual{
+        {"machine","primitive_grinder"},
+        {"manifest",QJsonObject{{"format","magneticraft2:machine_visual"},
+                                {"unknown_pack_note","preserve exactly"}}},
+        {"scene",QJsonObject{{"format","magneticraft2:visual_animation"},
+                             {"components",QJsonObject{{"axle",QJsonObject{{"future_property",42}}}}}}}
+    };
+    oldDocument["visualRuntime"]=visual;
+    assert(ProjectIO::decode(QJsonDocument(oldDocument).toJson(),oldLoaded,err));
+    oldLoaded.project.name="Renamed without touching animation data";
+    const auto saved=ProjectIO::encode(oldLoaded.project,oldLoaded.original);
+    assert(saved.value("visualRuntime").toObject()==visual);
+    assert(ProjectIO::write(temp.filePath("visual-roundtrip.mcraftstudio.json"),
+                             oldLoaded.project,oldLoaded.original,err));
+    LoadResult loadedVisual;
+    assert(ProjectIO::read(temp.filePath("visual-roundtrip.mcraftstudio.json"),loadedVisual,err));
+    assert(loadedVisual.original.value("visualRuntime").toObject()==visual);
     std::cout<<"Native Qt JSON IO tests passed\n";
     return 0;
 }
