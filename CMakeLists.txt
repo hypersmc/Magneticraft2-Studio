@@ -28,6 +28,7 @@ if(NOT STUDIO_HEADLESS_ONLY)
         src/main.cpp
         src/io/ProjectIO.hpp src/io/ProjectIO.cpp
         src/io/AnimationExport.hpp src/io/AnimationExport.cpp
+        src/io/VisualContract.hpp src/io/VisualContract.cpp
         src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
         src/io/TextureAssets.hpp src/io/TextureAssets.cpp
         src/ui/MainWindow.hpp src/ui/MainWindow.cpp
@@ -67,7 +68,7 @@ if(STUDIO_BUILD_TESTS)
             src/ui/Viewport.hpp src/ui/Viewport.cpp)
         target_link_libraries(studio-model-ui-tests PRIVATE studio_core
             Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test)
-        add_executable(studio-io-tests tests/test_io.cpp src/io/ProjectIO.hpp src/io/ProjectIO.cpp src/io/AnimationExport.hpp src/io/AnimationExport.cpp)
+        add_executable(studio-io-tests tests/test_io.cpp src/io/ProjectIO.hpp src/io/ProjectIO.cpp src/io/AnimationExport.hpp src/io/AnimationExport.cpp src/io/VisualContract.hpp src/io/VisualContract.cpp)
         target_link_libraries(studio-io-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-io-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-io-tests COMMAND studio-io-tests)
@@ -75,6 +76,13 @@ if(STUDIO_BUILD_TESTS)
         target_link_libraries(studio-import-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-import-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-import-tests COMMAND studio-import-tests)
+
+        add_executable(studio-visual-contract-tests tests/test_visual_contract.cpp
+            src/io/VisualContract.hpp src/io/VisualContract.cpp)
+        target_link_libraries(studio-visual-contract-tests PRIVATE Qt6::Core Qt6::Gui)
+        target_compile_definitions(studio-visual-contract-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+        add_test(NAME studio-visual-contract-tests COMMAND studio-visual-contract-tests)
+
         add_executable(studio-texture-assets-tests tests/test_texture_assets.cpp
             src/io/TextureAssets.cpp src/io/TextureAssets.hpp
             src/io/BlockModelImport.cpp src/io/BlockModelImport.hpp)
