@@ -162,8 +162,6 @@ bool VisualContract::validateManifest(const QJsonObject& m,const QString& machin
     }
     if(!physicalAngles().contains(machine))
         return fail(error,"Machine ID is not implemented by a Java visual renderer: "+machine);
-    for(auto it=m.value("angle_channels").toObject().begin();
-        it!=m.value("angle_channels").toObject().end();++it){} // no-op; validated via stable copy below
     const auto angles=m.value("angle_channels").toObject();
     for(auto it=angles.begin();it!=angles.end();++it)
         if(!availableAngles(machine).contains(it.value().toString()))
