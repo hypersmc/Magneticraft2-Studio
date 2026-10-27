@@ -1,7 +1,7 @@
 name: Native Linux Build
 on:
   push:
-    branches: [native-linux, main]
+    branches: [native-linux, main, feature/json-animation-export]
   pull_request:
     branches: [main]
 jobs:
