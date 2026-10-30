@@ -30,20 +30,30 @@ set **VIEW = Top**, **PLANE Y = 1**, **HEIGHT = 1/4**, **SNAP = 1/16**,
 and drag in the viewport. Then select the beam and resize it with the handles.
 Save and reopen the `.mcraftstudio.json` project to verify it persists.
 
-## Magneticraft2 JSON animations (export-only bridge)
+## Magneticraft2 Java visual animations (draft PR #3)
 
-**File → Export Magneticraft2 animation JSON…** exports explicit named model
-bindings and typed Gear V2 driven-rotation tracks from saved Studio project
-metadata. The output uses the same `magneticraft2:visual_animation` v1 format
-as the Java mod's `feature/json-driven-animation` branch.
+**File → Edit Machine Visual JSON (runtime v1)...** opens a native Qt/OpenGL
+animated-machine editor. Choose one of six actual Java machine types:
+Bronze Lathe, Mechanical Sifter, Primitive Grinder, Ore Washer, Bronze Stamp
+Mill or Rotary Ore Classifier. Studio **bundles the matching v1 manifest and
+scene for each machine**; selecting Ore Washer automatically uses its real
+`trommel` source, not the Grinder's `mechanical_input`. No mod source download
+is required just to open and edit these examples.
 
-The editor **does not yet generate animated meshes, provide a working motion
-timeline, or preview these animated joints**. Explicit `animation` metadata
-for each Part and a top-level `motions` entry must currently be authored in
-the Studio project's JSON. Model resource locations must resolve to already
-available baked Minecraft models. See [Animation Export](docs/ANIMATION_EXPORT.md)
-for the exact contract, example and limitations.
+Click **Open Magneticraft2 JAR...** to load the selected machine's real
+manifest, scene, baked model JSON and textures directly from your installed
+mod JAR. It does not use an external unzip command or write to the JAR.
+Alternatively, **Load model assets from folder...** reads an unpacked
+`assets/` tree. To fill in missing vanilla textures, choose the local
+Minecraft client JAR with **Add missing PNGs from Minecraft JAR...**.
 
+The animation viewport supports component hierarchy and pivots, physical
+shaft angles, state-driven tracks, wear variants, Sifter slider-crank
+closure and the Stamp Mill's shaft-driven belt path. Static Java-rendered
+machine bodies, N/E/W whole-machine facing, complete mod visual effects
+and full pack ZIP export are **not yet reproduced**. The existing
+rotation-only export bridge is retained. See
+[Visual runtime v1](docs/VISUAL_RUNTIME_V1.md) for limitations and testing.
 ## Arch Linux / KDE: build and run
 
 Install build dependencies:
@@ -81,7 +91,7 @@ ctest --test-dir build --output-on-failure
 - Construction layer editor: paint with registered block-role identifiers and resize dimensions from 1 to 128 blocks on each axis. Native model dimensions are *not* limited to 3 x 3 x 3.
 - Dedicated formed **Model** workspace with direct click-and-drag cuboid drawing, live preview, editable workplane/height, orthographic camera views, grouped outliner and **draggable XYZ axis handles**. No 3×3×3 editing limitation.
 - 3D geometry assembly runs via a **single background worker thread** and returns completed meshes to the GUI without issuing OpenGL commands outside the GUI thread. Face culling is applied to enclosed construction block faces.
-- Save and reopen the previous web alpha's `.mcraftstudio.json` **schema v1**. Unknown top-level project and part fields are retained on save. Imported animation data is preserved, but animations are not simulated by this native alpha.
+- Save and reopen the previous web alpha's `.mcraftstudio.json` **schema v1**. Unknown top-level project and part fields are retained on save. Imported animation data remains compatible; runtime-v1 machine animations now have an opt-in OpenGL rig preview.
 - Import existing Magneticraft2 `structure.layout.layerN` construction files (sample Washer/Sifter files provided). North/east/south/west imported layouts are mapped to the canonical local orientation.
 - Export the four rotated JSON construction layouts plus a manifest in a selected directory. **Formed-model export is not implemented yet.** This is deliberate: writing incomplete formed models would be misleading or break the mod.
 - In-memory undo/redo, unsaved change confirmation, atomic file saving via `QSaveFile` and keyboard shortcuts.
@@ -131,10 +141,10 @@ The UI and Forge exporter are separate from the project/geometry layer. A later 
 
 ## Deliberately not claimed as complete
 
-- Pixel brush painting, imported baked Java models or a `.bbmodel` importer.
-- Fully editable animation rigs, IK, gear linkage constraints or physics/simulation.
+- Pixel brush painting, `.bbmodel` importer, or a full general-purpose Java baked-model compiler. Runtime-v1 scene parts can be previewed from actual local Minecraft model JSON.
+- A complete typed rig authoring UI, unrestricted IK, simulation or gameplay physics (the v1 Sifter's real analytical slider-crank linkage is previewable).
 - Full Blockbench-equivalent vertex/face modeling, freeform meshes or animation rigs.
-- Formed-model tiled Minecraft block assets, animated BER metadata or mod-side runtime integration.
+- Full formed-model tile export, animated BER metadata generation and live mod-side rendering parity.
 - AppImage/pacman releases, CI packaging, Windows, macOS.
 - GUI testing on the target Arch/KDE desktop. Linux CI provides a Qt/OpenGL startup smoke test; interactive mouse-driven modeling still needs manual validation.
 
