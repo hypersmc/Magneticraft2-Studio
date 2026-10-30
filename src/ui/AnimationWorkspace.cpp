@@ -45,7 +45,7 @@ QString selectedTrack(const QComboBox* box){return box->currentData().toString()
 AnimationWorkspace::AnimationWorkspace(Viewport* viewport,QWidget* parent)
     :QWidget(parent),viewport_(viewport){
     setObjectName("AnimationWorkspacePanel");
-    setMinimumHeight(305);
+    setMinimumHeight(355);
     auto* main=new QVBoxLayout(this);
     main->setContentsMargins(12,10,12,9);
     main->setSpacing(8);
@@ -149,6 +149,7 @@ AnimationWorkspace::AnimationWorkspace(Viewport* viewport,QWidget* parent)
     ml->addLayout(amounts);
     auto* applyRotation=new QPushButton("Add / update rotation",motion);
     applyRotation->setObjectName("AnimationApplyRotation");
+    applyRotation->setMinimumHeight(29);
     ml->addWidget(applyRotation);
     columns->addWidget(motion,1);
 
@@ -168,10 +169,16 @@ AnimationWorkspace::AnimationWorkspace(Viewport* viewport,QWidget* parent)
     pivotLayout->addWidget(pivotFromPart_);
     auto* savePivot=new QPushButton("Apply pivot",pivotBox);
     savePivot->setObjectName("AnimationApplyPivot");
-    pivotLayout->addWidget(savePivot);
-    auto* frame=new QPushButton("Frame animated rig",pivotBox);
+    auto* frame=new QPushButton("Frame rig",pivotBox);
     frame->setObjectName("AnimationFrameRig");
-    pivotLayout->addWidget(frame);
+    auto* pivotButtons=new QHBoxLayout;
+    pivotButtons->setSpacing(6);
+    pivotButtons->addWidget(savePivot);
+    pivotButtons->addWidget(frame);
+    pivotLayout->addLayout(pivotButtons);
+    pivotFromPart_->setMinimumHeight(29);
+    savePivot->setMinimumHeight(29);
+    frame->setMinimumHeight(29);
     columns->addWidget(pivotBox,1);
     main->addLayout(columns,1);
 
