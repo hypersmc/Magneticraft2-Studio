@@ -49,6 +49,7 @@ static QJsonObject partObject(const Part& part,QJsonObject original) {
     for(int i=0;i<6;i++) {
         const auto& f=part.faces[std::size_t(i)];
         QJsonObject uv{{"auto",f.automatic},{"rotate",f.quarterTurns}};
+        if(!f.enabled)uv["enabled"]=false;
         if(!f.texture.empty())uv["texture"]=q(f.texture);
         QJsonArray rect;for(double n:f.uv)rect.append(n);
         uv["uv"]=rect;
@@ -56,13 +57,17 @@ static QJsonObject partObject(const Part& part,QJsonObject original) {
     }
     original["faces"]=faces;
     if(!part.motionId.empty())original["motionId"]=q(part.motionId);else original.remove("motionId");
+    if(!part.rigComponentId.empty())original["rigComponent"]=q(part.rigComponentId);
+    else original.remove("rigComponent");
     return original;
 }
 static Part readPart(const QJsonObject& obj) {
     Part part;
     part.id=s(obj.value("id"));part.name=s(obj.value("name"));part.group=s(obj.value("group"));
     part.material=s(obj.value("material"));part.texture=s(obj.value("texture"));
-    part.motionId=s(obj.value("motionId"));part.visible=obj.value("visible").toBool(true);
+    part.motionId=s(obj.value("motionId"));
+    part.rigComponentId=s(obj.value("rigComponent"));
+    part.visible=obj.value("visible").toBool(true);
     part.bounds={vec(obj.value("from")),vec(obj.value("to"))};
     if(!validBounds(part.bounds)) throw std::invalid_argument("A model part has non-finite or inverted bounds");
     if(part.group.empty())part.group="Static";
@@ -76,6 +81,7 @@ static Part readPart(const QJsonObject& obj) {
         const QJsonObject f=faces.value(faceNames[i]).toObject();
         if(f.isEmpty())continue;
         auto& target=part.faces[std::size_t(i)];
+        target.enabled=f.value("enabled").toBool(true);
         target.texture=s(f.value("texture"));
         target.automatic=f.value("auto").toBool(true);
         target.quarterTurns=std::clamp(f.value("rotate").toInt(0),-1000,1000);

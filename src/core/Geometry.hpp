@@ -1,5 +1,6 @@
 #pragma once
 #include "Project.hpp"
+#include <set>
 
 namespace studio {
 
@@ -29,6 +30,7 @@ struct BuildOptions {
     bool showGrid=true;
     int layer=-1; // -1 = all construction layers
     int selectedPart=-1;
+    std::set<std::string> hideRigComponents; // Hide bound parts only while their animated copies render.
     double gridY=0.0; // Modeling plane; independent from construction layer
 };
 

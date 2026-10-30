@@ -1,0 +1,215 @@
+#include "io/RigTransforms.hpp"
+#include "io/RigAssetLoader.hpp"
+#include "io/RigAssetCache.hpp"
+#include "io/RigBeltMesh.hpp"
+#include "io/VisualContract.hpp"
+#include <QCoreApplication>
+#include <QFile>
+#include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QVector3D>
+#include <QTemporaryDir>
+#include <QByteArray>
+#include <QVector>
+#include <QFileInfo>
+#include <zlib.h>
+#include <cassert>
+#include <cmath>
+#include <iostream>
+using namespace studio;
+static QByteArray read(const QString& p){QFile f(p);assert(f.open(QIODevice::ReadOnly));return f.readAll();}
+static bool near(double x,double y,double eps=1e-4){return std::abs(x-y)<eps;}
+
+static void put16(QByteArray& out,quint16 n){
+    out.append(char(n&255));out.append(char((n>>8)&255));
+}
+static void put32(QByteArray& out,quint32 n){put16(out,quint16(n));put16(out,quint16(n>>16));}
+static QByteArray zipStored(const QVector<QPair<QByteArray,QByteArray>>& files){
+    QByteArray zip;
+    struct Central{QByteArray name;quint32 crc=0,size=0,offset=0;};
+    QVector<Central> dirs;
+    for(const auto& item:files){
+        const QByteArray& name=item.first,& bytes=item.second;
+        Central entry{name,quint32(crc32(0L,Z_NULL,0)),quint32(bytes.size()),quint32(zip.size())};
+        entry.crc=quint32(crc32(entry.crc,
+            reinterpret_cast<const Bytef*>(bytes.constData()),uInt(bytes.size())));
+        put32(zip,0x04034b50);put16(zip,20);put16(zip,0);put16(zip,0);
+        put16(zip,0);put16(zip,0);put32(zip,entry.crc);put32(zip,entry.size);
+        put32(zip,entry.size);put16(zip,quint16(name.size()));put16(zip,0);
+        zip+=name;zip+=bytes;
+        dirs.push_back(entry);
+    }
+    const quint32 start=quint32(zip.size());
+    for(const auto& entry:dirs){
+        put32(zip,0x02014b50);put16(zip,20);put16(zip,20);put16(zip,0);put16(zip,0);
+        put16(zip,0);put16(zip,0);put32(zip,entry.crc);put32(zip,entry.size);
+        put32(zip,entry.size);put16(zip,quint16(entry.name.size()));put16(zip,0);
+        put16(zip,0);put16(zip,0);put16(zip,0);put32(zip,0);put32(zip,entry.offset);
+        zip+=entry.name;
+    }
+    const quint32 directorySize=quint32(zip.size())-start;
+    put32(zip,0x06054b50);put16(zip,0);put16(zip,0);put16(zip,quint16(dirs.size()));
+    put16(zip,quint16(dirs.size()));put32(zip,directorySize);put32(zip,start);put16(zip,0);
+    return zip;
+}
+
+int main(int argc,char** argv){
+    QCoreApplication app(argc,argv);
+    const QString root=QString(STUDIO_TEST_SOURCE_DIR)+"/tests/fixtures/animation-v1/";
+    const QStringList machines={"bronze_mechanical_lathe","mechanical_sifter","primitive_grinder",
+                                  "mechanical_ore_washer","bronze_stamp_mill","rotary_ore_classifier"};
+    for(const auto& machine:machines){
+        QString error;QJsonObject m,s;
+        assert(VisualContract::importPair(machine,read(root+"machine_visuals/"+machine+".json"),
+            read(root+"animations/"+machine+".json"),m,s,error));
+        QMap<QString,double> angles;
+        for(const QString& source:VisualContract::availableAngles(machine))
+            angles[source]=source=="output_shaft"?45.0:90.0;
+        RigPose pose;
+        if(!RigTransforms::evaluate(machine,m,s,angles,true,false,false,2,pose,error)){
+            std::cerr<<error.toStdString()<<"\n";return 8;
+        }
+        assert(pose.components.size()==std::size_t(s.value("components").toObject().size()));
+        if(machine=="mechanical_sifter"){
+            const auto& crank=pose.components.at("sieve_rod").world;
+            const auto& follower=pose.components.at("sieve_follower").world;
+            const QVector3D pin=crank.map(QVector3D(0,0,0));
+            const QVector3D end=follower.map(QVector3D(0,0,0));
+            assert(near(double((end-pin).length()),0.4375,2e-5));
+            assert(near(pose.components.at("sieve_carriage").world.map(QVector3D(0,0,0)).z(),0.12));
+            assert(pose.components.at("upper_tray").modelId.find("wear_2")!=std::string::npos);
+            const QVector3D pivot(0.5f,0.78f,1.2f);
+            const auto child=pose.components.at("upper_tray").world.map(pivot);
+            const auto parent=pose.components.at("sieve_carriage").world.map(pivot);
+            assert(near(double((child-parent).length()),0.0));
+        }
+        if(machine=="bronze_stamp_mill"){
+            assert(pose.beltDistanceBlocks.count("drive_belt")==1);
+            assert(near(pose.beltDistanceBlocks.at("drive_belt"),45.*3.141592653589793/180.*0.2978125));
+            RigPose idle;
+            assert(RigTransforms::evaluate(machine,m,s,angles,false,false,false,0,idle,error));
+            const double headY=idle.components.at("hammer_middle").world.map(QVector3D()).y();
+            const auto part=s.value("components").toObject().value("hammer_middle").toObject();
+            assert(near(headY,part.value("model_offset").toArray()[1].toDouble()));
+        }
+        if(machine=="primitive_grinder"){
+            auto changed=s;auto parts=changed.value("components").toObject();
+            const QString first=parts.begin().key();
+            auto part=parts.value(first).toObject();part["visible_when"]="stopped";
+            parts[first]=part;changed["components"]=parts;
+            RigPose modified;
+            assert(RigTransforms::evaluate(machine,m,changed,angles,true,false,false,0,modified,error));
+            assert(!modified.components.at(first.toStdString()).visible);
+        }
+    }
+    // End users do NOT have a source checkout. Read each actual manifest and
+    // scene out of an installed mod-like JAR (ZIP), without unzip or filesystem
+    // extraction and without guessing physical angle aliases.
+    QVector<QPair<QByteArray,QByteArray>> jarEntries;
+    for(const auto& machine:machines){
+        for(const auto& folder:QStringList{"machine_visuals","animations"}){
+            const QString resource="assets/magneticraft2/"+folder+"/"+machine+".json";
+            jarEntries.append({resource.toUtf8(),read(root+folder+"/"+machine+".json")});
+        }
+    }
+    for(const auto& model:QStringList{"primitive_grinder_axle","primitive_grinder_rotor"}){
+        const QString path="assets/magneticraft2/models/multiblock/"+model+".json";
+        jarEntries.append({path.toUtf8(),read(QString(STUDIO_TEST_SOURCE_DIR)+
+            "/tests/fixtures/rig-assets/"+path)});
+    }
+    QTemporaryDir modJarTest;assert(modJarTest.isValid());
+    const QString jarPath=modJarTest.filePath("magneticraft2-1.20.1-test.jar");
+    {
+        QFile file(jarPath);assert(file.open(QIODevice::WriteOnly));
+        const QByteArray zip=zipStored(jarEntries);
+        assert(file.write(zip)==zip.size());
+    }
+    // Shared cache persists across workspace entries. Changing a shaft track
+    // or pivot leaves mesh dependencies unchanged and must reuse the same
+    // built geometry rather than reread the installed mod JAR.
+    {
+        QString error;QJsonObject m,s;
+        assert(RigAssetLoader::loadMachineDefinition(jarPath,"primitive_grinder",m,s,error));
+        const auto first=RigAssetCache::shared().get(
+            jarPath,"primitive_grinder",s,{},error);
+        assert(first && error.isEmpty());
+        QJsonObject edited=s;
+        auto components=edited.value("components").toObject();
+        auto part=components.begin().value().toObject();
+        part["pivot"]=QJsonArray{0.25,0.5,0.75};
+        components[components.begin().key()]=part;
+        edited["components"]=components;
+        const auto reused=RigAssetCache::shared().get(
+            jarPath,"primitive_grinder",edited,{},error);
+        assert(reused==first);
+    }
+    for(const auto& machine:machines){
+        QString error;QJsonObject m,s;
+        if(!RigAssetLoader::loadMachineDefinition(jarPath,machine,m,s,error)){
+            std::cerr<<"JAR import failed: "<<error.toStdString()<<"\n";return 18;
+        }
+        QJsonObject wantedM,wantedS;
+        assert(VisualContract::parseObject(read(root+"machine_visuals/"+machine+".json"),wantedM,error));
+        assert(VisualContract::parseObject(read(root+"animations/"+machine+".json"),wantedS,error));
+        assert(m==wantedM && s==wantedS);
+        if(machine=="primitive_grinder"){
+            RigAssets modelAssets;
+            assert(RigAssetLoader::load(jarPath,s,modelAssets,machine));
+            assert(modelAssets.models.count("magneticraft2:multiblock/primitive_grinder_axle"));
+            assert(modelAssets.models.count("magneticraft2:multiblock/primitive_grinder_rotor"));
+            assert(modelAssets.missingModels.isEmpty());
+        }
+    }
+
+    // Parent-only inheritance must resolve the actual texture-slot override;
+    // the importer must NOT fill in five sides missing from the Java model.
+    QTemporaryDir temp;assert(temp.isValid());
+    QDir rootDir(temp.path());assert(rootDir.mkpath("assets/magneticraft2/models/studio"));
+    const QByteArray base=R"({"textures":{"surface":"minecraft:block/oak_planks"},
+      "elements":[{"from":[0,0,0],"to":[16,16,16],
+      "faces":{"south":{"texture":"#surface","uv":[0,0,16,16]}}}]})";
+    const QByteArray child=R"({"parent":"magneticraft2:studio/base",
+      "textures":{"surface":"minecraft:block/stripped_spruce_log"}})";
+    for(const auto& name:QStringList{"base","child"}){
+        QFile f(rootDir.filePath("assets/magneticraft2/models/studio/"+name+".json"));
+        assert(f.open(QIODevice::WriteOnly));
+        const QByteArray& bytes=name=="base"?base:child;
+        assert(f.write(bytes)==bytes.size());
+    }
+    QJsonObject scene;scene["components"]=QJsonObject{{"preview",
+        QJsonObject{{"model","magneticraft2:studio/child"},{"model_offset",QJsonArray{0,0,0}},
+                    {"pivot",QJsonArray{0,0,0}}}}};
+    RigAssets assets;
+    assert(RigAssetLoader::load(temp.path(),scene,assets));
+    assert(assets.models.count("magneticraft2:studio/child")==1);
+    assert(assets.models.at("magneticraft2:studio/child").triangles.size()==6);
+    assert(assets.missingTextures.contains("minecraft:block/stripped_spruce_log"));
+    // The Stamp Mill belt must actually be a loop of 4-face strips with
+    // physical U-tiling, not one stretched texture across the whole run.
+    QJsonObject stamp;
+    QString beltError;
+    assert(VisualContract::parseObject(read(root+"animations/bronze_stamp_mill.json"),stamp,beltError));
+    const auto belt=stamp.value("belt_loops").toObject().value("drive_belt").toObject();
+    Geometry loop;
+    assert(RigBeltMesh::build(belt,loop,beltError));
+    assert(loop.draws.size()==1);
+    assert(loop.draws.front().count==loop.triangles.size());
+    // Two straight runs + two 16-segment half-turn arcs for equal radii.
+    assert(loop.triangles.size()==24*34);
+    double minU=1e6,maxU=-1e6;
+    for(const auto& v:loop.triangles){
+        assert(std::isfinite(v.u)&&std::isfinite(v.v));
+        minU=std::min(minU,double(v.u));maxU=std::max(maxU,double(v.u));
+    }
+    assert(minU>=0 && maxU-minU>4.0);
+    // Reversed signed drives preserve continuous unwrapped belt travel.
+    QJsonObject m;
+    assert(VisualContract::parseObject(read(root+"machine_visuals/bronze_stamp_mill.json"),m,beltError));
+    RigPose reversed;
+    assert(RigTransforms::evaluate("bronze_stamp_mill",m,stamp,
+        {{"mechanical_input",0.0},{"output_shaft",-720.0}},
+        true,false,false,0,reversed,beltError));
+    assert(reversed.beltDistanceBlocks.at("drive_belt")<0);
+    std::cout<<"Six machine rigs, rigid slider-crank and real model inheritance verified\n";
+}

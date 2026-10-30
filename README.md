@@ -30,6 +30,34 @@ set **VIEW = Top**, **PLANE Y = 1**, **HEIGHT = 1/4**, **SNAP = 1/16**,
 and drag in the viewport. Then select the beam and resize it with the handles.
 Save and reopen the `.mcraftstudio.json` project to verify it persists.
 
+## Magneticraft2 animations — integrated Animate workspace (draft PR #3)
+
+Studio now has **BUILD · MODEL · UV / TEXTURE · ANIMATE** in the same machine
+document. Animate shares the existing OpenGL viewport, model geometry,
+textures, Outliner and saved Studio project. It's not a separate viewer.
+
+To animate your own cuboid, select the part in the Outliner, switch to
+**ANIMATE**, choose a Java runtime component (for example the Ore Washer
+drum), and click **Bind selected cuboid to joint**. You can explicitly
+use that cuboid's pivot, edit an existing rotation or add one with an
+axis, mechanical input, ratio, phase and condition. The rig is driven
+by the actual mod v1 JSON schema, not by a new fixed-speed animation format.
+
+Studio embeds the exact v1 definitions for all six current Java machines.
+**Choose mod JAR...** imports real baked models and textures from an
+installed Magneticraft2 JAR, without downloading the mod source.
+Once selected, the path is remembered in local settings and optionally
+the project; models stay cached across workspace switches.
+Vanilla textures can be added from a Minecraft client JAR once as well.
+External PNGs are not redistributed with Studio.
+
+The earlier advanced raw JSON dialog remains available from File, and
+the old Studio legacy motion fields are preserved. Full formed-machine
+renderer parity, export of a complete resource-pack ZIP, 3D pivot gizmos
+and Forge runtime visual verification remain in progress.
+
+See [Animate workspace](docs/ANIMATE_WORKSPACE.md) and
+[runtime v1 details](docs/VISUAL_RUNTIME_V1.md).
 ## Arch Linux / KDE: build and run
 
 Install build dependencies:
@@ -67,7 +95,7 @@ ctest --test-dir build --output-on-failure
 - Construction layer editor: paint with registered block-role identifiers and resize dimensions from 1 to 128 blocks on each axis. Native model dimensions are *not* limited to 3 x 3 x 3.
 - Dedicated formed **Model** workspace with direct click-and-drag cuboid drawing, live preview, editable workplane/height, orthographic camera views, grouped outliner and **draggable XYZ axis handles**. No 3×3×3 editing limitation.
 - 3D geometry assembly runs via a **single background worker thread** and returns completed meshes to the GUI without issuing OpenGL commands outside the GUI thread. Face culling is applied to enclosed construction block faces.
-- Save and reopen the previous web alpha's `.mcraftstudio.json` **schema v1**. Unknown top-level project and part fields are retained on save. Imported animation data is preserved, but animations are not simulated by this native alpha.
+- Save and reopen the previous web alpha's `.mcraftstudio.json` **schema v1**. Unknown top-level project and part fields are retained on save. Imported animation data remains compatible; runtime-v1 machine animations now have an opt-in OpenGL rig preview.
 - Import existing Magneticraft2 `structure.layout.layerN` construction files (sample Washer/Sifter files provided). North/east/south/west imported layouts are mapped to the canonical local orientation.
 - Export the four rotated JSON construction layouts plus a manifest in a selected directory. **Formed-model export is not implemented yet.** This is deliberate: writing incomplete formed models would be misleading or break the mod.
 - In-memory undo/redo, unsaved change confirmation, atomic file saving via `QSaveFile` and keyboard shortcuts.
@@ -117,10 +145,10 @@ The UI and Forge exporter are separate from the project/geometry layer. A later 
 
 ## Deliberately not claimed as complete
 
-- Pixel brush painting, imported baked Java models or a `.bbmodel` importer.
-- Fully editable animation rigs, IK, gear linkage constraints or physics/simulation.
+- Pixel brush painting, `.bbmodel` importer, or a full general-purpose Java baked-model compiler. Runtime-v1 scene parts can be previewed from actual local Minecraft model JSON.
+- A complete typed rig authoring UI, unrestricted IK, simulation or gameplay physics (the v1 Sifter's real analytical slider-crank linkage is previewable).
 - Full Blockbench-equivalent vertex/face modeling, freeform meshes or animation rigs.
-- Formed-model tiled Minecraft block assets, animated BER metadata or mod-side runtime integration.
+- Full formed-model tile export, animated BER metadata generation and live mod-side rendering parity.
 - AppImage/pacman releases, CI packaging, Windows, macOS.
 - GUI testing on the target Arch/KDE desktop. Linux CI provides a Qt/OpenGL startup smoke test; interactive mouse-driven modeling still needs manual validation.
 

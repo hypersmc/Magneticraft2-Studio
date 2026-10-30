@@ -89,7 +89,7 @@ bool listZipEntries(const QByteArray& archive,const QSet<QString>& paths,
             error="ZIP/JAR entry extends beyond its directory";return false;
         }
         const QString name=QString::fromUtf8(archive.constData()+at+46,nameLen);
-        if(paths.contains(name)) {
+        if(paths.isEmpty() || paths.contains(name)) {
             const ZipEntry e{read32(archive,at+42),read32(archive,at+20),
                              read32(archive,at+24),read32(archive,at+16),
                              read16(archive,at+10),read16(archive,at+8)};
@@ -100,14 +100,16 @@ bool listZipEntries(const QByteArray& archive,const QSet<QString>& paths,
     return true;
 }
 
-QByteArray extractZipEntry(const QByteArray& archive, const ZipEntry& e,QString& error) {
+QByteArray extractZipEntry(const QByteArray& archive,const ZipEntry& e,QString& error,
+                           qsizetype maxBytes=8*1024*1024) {
     const qsizetype local=e.offset;
     if(local+30>archive.size()||read32(archive,local)!=0x04034b50){
         error="ZIP/JAR entry has an invalid local header";return {};
     }
     if((e.flags&1)!=0){error="Encrypted ZIP entries are not supported";return {};}
-    if(e.uncompressed==0 || e.uncompressed>kMaxPngBytes || e.compressed>kMaxPngBytes){
-        error="PNG entry exceeds 8 MiB size limit";return {};
+    if(e.uncompressed==0 || e.uncompressed>quint64(maxBytes) ||
+       e.compressed>quint64(std::max<qsizetype>(maxBytes,1))) {
+        error="Archive asset exceeds the safe per-resource size limit";return {};
     }
     if(e.method!=0 && e.method!=8){error="ZIP/JAR entry uses an unsupported compression method";return {};}
     const qsizetype start=local+30+qsizetype(read16(archive,local+26))+read16(archive,local+28);
@@ -140,12 +142,75 @@ QByteArray extractZipEntry(const QByteArray& archive, const ZipEntry& e,QString&
     if(quint32(check)!=e.crc){error="ZIP/JAR PNG failed CRC validation";return {};}
     return output;
 }
-QStringList requestedPaths(const QStringList& required) {
-    QStringList paths;
-    for(const QString& id:required)paths.append(archivePath(id));
-    return paths;
-}
 } // namespace
+struct AssetSource::Impl {
+    QByteArray zip;
+    QHash<QString,ZipEntry> entries;
+    QDir directory;
+    bool zipped=false,valid=false;
+};
+AssetSource::AssetSource():impl_(std::make_unique<Impl>()){}
+AssetSource::~AssetSource()=default;
+
+bool AssetSource::open(const QString& sourcePath,QString& error){
+    error.clear();impl_=std::make_unique<Impl>();
+    const QFileInfo info(sourcePath);
+    if(info.isFile()){
+        if(!QStringList{".jar",".zip"}.contains("."+info.suffix().toLower())){
+            error="Select a local mod/client JAR, resource-pack ZIP, or assets directory";return false;
+        }
+        if(info.size()>kMaxArchiveSize){
+            error="Local archive is larger than the 512 MiB safety limit";return false;
+        }
+        QFile file(sourcePath);
+        if(!file.open(QIODevice::ReadOnly)){error=file.errorString();return false;}
+        impl_->zip=file.readAll();
+        if(!listZipEntries(impl_->zip,{},impl_->entries,error)){
+            impl_->zip.clear();return false;
+        }
+        impl_->zipped=true;impl_->valid=true;return true;
+    }
+    if(!info.isDir()){
+        error="Selected asset source is not an existing directory or .jar/.zip file";
+        return false;
+    }
+    impl_->directory=QDir(sourcePath);
+    if(!impl_->directory.exists("assets") &&
+        impl_->directory.dirName()!="assets"){
+        error="Directory must contain assets/ or be the assets/ directory";
+        return false;
+    }
+    impl_->valid=true;
+    return true;
+}
+bool AssetSource::read(const QString& relative,QByteArray& out,QString& error,
+                       qsizetype maxBytes) const{
+    out.clear();error.clear();
+    if(!impl_->valid){error="Asset source is not open";return false;}
+    if(!relative.startsWith("assets/")||relative.contains("..")||
+       relative.contains('\\')||relative.contains('%')||
+       relative.size()>512||maxBytes<1||maxBytes>8*1024*1024){
+        error="Rejected unsafe or unsupported Minecraft asset path";return false;
+    }
+    if(impl_->zipped){
+        const auto it=impl_->entries.constFind(relative);
+        if(it==impl_->entries.constEnd())return false;
+        out=extractZipEntry(impl_->zip,it.value(),error,maxBytes);
+        return !out.isEmpty();
+    }
+    QString name=impl_->directory.filePath(relative);
+    if(!QFileInfo(name).isFile() && impl_->directory.dirName()=="assets")
+        name=impl_->directory.filePath(relative.mid(7));
+    const QFileInfo info(name);
+    if(!info.isFile())return false;
+    if(info.size()<1||info.size()>maxBytes){
+        error="Asset file exceeds its safe size limit";return false;
+    }
+    QFile file(name);
+    if(!file.open(QIODevice::ReadOnly)){error=file.errorString();return false;}
+    out=file.readAll();
+    return !out.isEmpty();
+}
 
 QStringList referencedTextureIds(const Project& project) {
     QSet<QString> ids;
@@ -179,45 +244,13 @@ TextureAssetReport importTextureAssets(Project& project,const QString& sourcePat
         else wanted.append(id);
     }
     if(wanted.isEmpty()){report.missing=missingTextureIds(project);return report;}
-    QFileInfo info(sourcePath);
-    QHash<QString,ZipEntry> entries;
-    QByteArray archive;
-    if(info.isFile()) {
-        if(!info.fileName().endsWith(".jar",Qt::CaseInsensitive) && !info.fileName().endsWith(".zip",Qt::CaseInsensitive)){
-            report.error="Choose a Minecraft .jar, resource-pack .zip, or an unpacked assets directory.";return report;
-        }
-        if(info.size()>kMaxArchiveSize){report.error="ZIP/JAR exceeds the 512 MiB safety limit";return report;}
-        QFile file(sourcePath);
-        if(!file.open(QIODevice::ReadOnly)){report.error=file.errorString();return report;}
-        archive=file.readAll();
-        QSet<QString> paths;
-        for(const QString& path:requestedPaths(wanted))paths.insert(path);
-        if(!listZipEntries(archive,paths,entries,report.error))return report;
-    }else if(!info.isDir()){
-        report.error="Texture source does not exist";return report;
-    }
-    const QDir root(sourcePath);
+    AssetSource source;
+    if(!source.open(sourcePath,report.error))return report;
     for(const QString& id:wanted){
         const QString relative=archivePath(id);
         QByteArray png;
         QString warning;
-        if(info.isFile()) {
-            if(entries.contains(relative))png=extractZipEntry(archive,entries.value(relative),warning);
-        }else{
-            QString name=root.filePath(relative);
-            // Also accept selecting the assets/ folder instead of its parent.
-            if(!QFileInfo(name).isFile())name=root.filePath(relative.mid(7));
-            // An unpacked resource pack may be nested one level below a launcher root.
-            if(QFileInfo(name).isFile()){
-                const QFileInfo fileInfo(name);
-                if(fileInfo.size()>kMaxPngBytes)warning="PNG exceeds the 8 MiB resource limit";
-                else {
-                    QFile file(name);
-                    if(file.open(QIODevice::ReadOnly))png=file.readAll();
-                    else warning=file.errorString();
-                }
-            }
-        }
+        source.read(relative,png,warning,kMaxPngBytes);
         if(!png.isEmpty() && !validPng(png,warning))png.clear();
         if(!png.isEmpty()) {
             const qsizetype existing=project.textures.count(id.toStdString())?

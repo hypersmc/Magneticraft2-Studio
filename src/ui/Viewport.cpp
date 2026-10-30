@@ -78,6 +78,7 @@ Viewport::~Viewport(){
     if(glReady_ && context()) {
         makeCurrent();
         textureCache_.clear();
+        rigGpuMeshes_.clear(); // Destroy GL buffers with current context.
         solid_.destroy();lines_.destroy();vao_.destroy();
         shader_.removeAllShaders();
         doneCurrent();
@@ -89,6 +90,56 @@ void Viewport::setScene(const Project& document,BuildOptions options){
     document_=document;options_=options;
     updateHud();
     rebuildAsync();
+}
+void Viewport::setRigModels(const std::map<std::string,Geometry>& models,
+                            const std::map<std::string,std::string>& textures,
+                            const std::map<std::string,double>& beltRepeats){
+    rigSourceMeshes_=models;
+    rigBeltRepeats_=beltRepeats;
+    rigTextures_=textures; // Never overwrite the current authored project's textures.
+    texturesDirty_=true;
+    rigGpuDirty_=true; // Uploaded only after GL context is current.
+    update();
+}
+void Viewport::setRigVisible(bool visible){
+    if(rigVisible_==visible)return;
+    rigVisible_=visible;
+    updateHud();update();
+}
+void Viewport::setRigPose(const RigPose& pose){
+    rigPose_=pose; // Only matrices/models/visibility change each sample.
+    update();      // No per-frame mesh generation or VBO allocation.
+}
+void Viewport::clearRig(){
+    rigSourceMeshes_.clear();
+    rigBeltRepeats_.clear();
+    rigTextures_.clear();
+    texturesDirty_=true;
+    rigPose_={};
+    rigGpuDirty_=true;
+    update();
+}
+void Viewport::frameRig(){
+    QVector3D low(1e8f,1e8f,1e8f),high(-1e8f,-1e8f,-1e8f);
+    bool found=false;
+    for(const auto& [name,part]:rigPose_.components){
+        Q_UNUSED(name);
+        if(!part.visible || part.modelId.empty())continue;
+        const auto model=rigSourceMeshes_.find(part.modelId);
+        if(model==rigSourceMeshes_.end())continue;
+        for(const Vertex& vertex:model->second.triangles){
+            const QVector3D v=part.world.map(QVector3D(vertex.x,vertex.y,vertex.z));
+            low.setX(std::min(low.x(),v.x()));low.setY(std::min(low.y(),v.y()));low.setZ(std::min(low.z(),v.z()));
+            high.setX(std::max(high.x(),v.x()));high.setY(std::max(high.y(),v.y()));high.setZ(std::max(high.z(),v.z()));
+            found=true;
+        }
+    }
+    if(!found)return; // Missing model dependencies are shown by the dialog.
+    target_=(low+high)*0.5f;
+    const QVector3D extent=high-low;
+    const double diameter=std::max(1.,double(extent.length()));
+    distance_=std::max(2.7,diameter*1.55);
+    update();
 }
 void Viewport::invalidateTextures(){
     texturesDirty_=true;
@@ -170,10 +221,11 @@ layout(location=1) in vec3 aColor;
 layout(location=2) in vec3 aNormal;
 layout(location=3) in vec2 aUv;
 uniform mat4 uMvp;
+uniform mat3 uNormalMat;
 out vec3 vColor;
 out vec3 vNormal;
 out vec2 vUv;
-void main(){gl_Position=uMvp*vec4(aPosition,1.0);vColor=aColor;vNormal=aNormal;vUv=aUv;}
+void main(){gl_Position=uMvp*vec4(aPosition,1.0);vColor=aColor;vNormal=uNormalMat*aNormal;vUv=aUv;}
 )";
     constexpr const char* fragment=R"(#version 330 core
 in vec3 vColor;
@@ -181,10 +233,13 @@ in vec3 vNormal;
 in vec2 vUv;
 uniform sampler2D uTexture;
 uniform bool uTextured;
+uniform int uRenderLayer;
+uniform float uUvScroll;
 out vec4 fragColor;
 void main(){
     float l=length(vNormal)<0.1?1.0:(0.54+0.46*max(0.0,dot(normalize(vNormal),normalize(vec3(0.48,0.9,0.4)))));
-    vec4 diffuse=uTextured?texture(uTexture,vec2(vUv.x,1.0-vUv.y)):vec4(1.0);
+    vec4 diffuse=uTextured?texture(uTexture,vec2(vUv.x+uUvScroll,1.0-vUv.y)):vec4(1.0);
+    if(uRenderLayer==1 && diffuse.a<0.5)discard;
     fragColor=vec4(vColor*diffuse.rgb*l,diffuse.a);
 }
 )";
@@ -205,14 +260,17 @@ void Viewport::updateHud(){
     if(!hud_||!help_)return;
     const bool visible=options_.showFormed;
     hud_->setVisible(visible);help_->setVisible(visible);
-    if(overlay_)overlay_->setVisible(visible);
+    if(overlay_)overlay_->setVisible(visible && !rigVisible_);
     const QString tool=activeTool_=='b'?"DRAW CUBE":activeTool_=='v'?"SELECT":activeTool_=='w'?"MOVE":activeTool_=='e'?"ROTATE":"RESIZE";
     const QString camera=cameraPreset_==1?"TOP":cameraPreset_==2?"FRONT":cameraPreset_==3?"RIGHT":"PERSPECTIVE";
-    hud_->setText(QString("MODEL  /  %1    ·    %2    ·    SNAP %3    ·    Y %4")
-        .arg(tool,camera,QString::number(gridStep_,'g',3),QString::number(workPlane_,'f',2)));
+    hud_->setText(QString("%5  /  %1    ·    %2    ·    SNAP %3    ·    Y %4")
+        .arg(tool,camera,QString::number(gridStep_,'g',3),QString::number(workPlane_,'f',2),rigVisible_?"ANIMATE":"MODEL"));
     hud_->adjustSize();
-    help_->setText(activeTool_=='b'?"Click-drag grid: draw cuboid   ·   Scroll: zoom   ·   Right-drag: pan":
-        "Click: select   ·   RGB: axis   ·   Color squares: plane   ·   White center: free/uniform   ·   Scroll: zoom");
+    help_->setText(rigVisible_
+        ? "ANIMATE: select model part in Outliner   ·   bind it to a joint   ·   choose pivot   ·   scrub shaft angle below"
+        : activeTool_=='b'
+            ? "Click-drag grid: draw cuboid   ·   Scroll: zoom   ·   Right-drag: pan"
+            : "Click: select   ·   RGB: axis   ·   Color squares: plane   ·   White center: free/uniform   ·   Scroll: zoom");
 }
 
 void Viewport::updateCameraMatrices(){
@@ -242,6 +300,25 @@ void Viewport::drawBuffer(QOpenGLBuffer& buffer,const std::vector<Vertex>& verti
     glVertexAttribPointer(3,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),reinterpret_cast<const void*>(offsetof(Vertex,u)));
     glDrawArrays(primitive,0,GLsizei(vertices.size()));
     buffer.release();
+}
+void Viewport::uploadRigBuffers(){
+    if(!rigGpuDirty_)return;
+    // GUI/GL thread only. Existing geometry is cached per model resource ID,
+    // and every component merely gets a different MVP matrix per frame.
+    rigGpuMeshes_.clear();
+    for(const auto& [resource,mesh]:rigSourceMeshes_){
+        if(mesh.triangles.empty())continue;
+        auto gpu=std::make_unique<RigGpuModel>();
+        if(!gpu->vertices.create())continue;
+        gpu->vertices.bind();
+        gpu->vertices.allocate(mesh.triangles.data(),
+                               int(mesh.triangles.size()*sizeof(Vertex)));
+        gpu->vertices.release();
+        gpu->count=GLsizei(mesh.triangles.size());
+        gpu->draws=mesh.draws;
+        rigGpuMeshes_[resource]=std::move(gpu);
+    }
+    rigGpuDirty_=false;
 }
 void Viewport::uploadBuffers(){
     if(!dirtyGpu_)return;
@@ -280,8 +357,11 @@ static QImage missingResourceChecker(){
     return image;
 }
 QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& material){
-    const auto source=document_.textures.find(id);
-    const bool embedded=!id.empty()&&source!=document_.textures.end();
+    const auto authored=document_.textures.find(id);
+    const auto imported=rigTextures_.find(id);
+    const std::string* png=authored!=document_.textures.end()?&authored->second:
+        imported!=rigTextures_.end()?&imported->second:nullptr;
+    const bool embedded=!id.empty()&&png;
     const std::string key=embedded?id:(id.empty()?"__fallback/"+material:"__missing/"+id);
     auto found=textureCache_.find(key);
     // IDs are immutable while editing. Cache invalidation happens explicitly
@@ -289,7 +369,7 @@ QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& ma
     if(found!=textureCache_.end())return found->second.gpu.get();
     QImage image;
     if(embedded){
-        const QByteArray bytes=QByteArray::fromBase64(QByteArray::fromStdString(source->second));
+        const QByteArray bytes=QByteArray::fromBase64(QByteArray::fromStdString(*png));
         image=QImage::fromData(bytes,"PNG");
         if(image.width()>4096||image.height()>4096)image=QImage();
     }
@@ -302,7 +382,7 @@ QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& ma
     gpu->setMinificationFilter(QOpenGLTexture::Nearest);
     gpu->setMagnificationFilter(QOpenGLTexture::Nearest);
     CachedTexture& cache=textureCache_[key];
-    cache.signature=embedded?source->second.size():0;
+    cache.signature=embedded?png->size():0;
     cache.gpu=std::move(gpu);
     return cache.gpu.get();
 }
@@ -316,7 +396,11 @@ void Viewport::paintGL(){
     if(texturesDirty_){textureCache_.clear();texturesDirty_=false;}
     uploadBuffers();
     shader_.bind();shader_.setUniformValue("uMvp",mvp_);
+    QMatrix4x4 unrotated;unrotated.setToIdentity();
+    shader_.setUniformValue("uNormalMat",unrotated.normalMatrix());
+    shader_.setUniformValue("uUvScroll",0.0f);
     shader_.setUniformValue("uTexture",0);
+    shader_.setUniformValue("uRenderLayer",0);
     vao_.bind();
     if(!mesh_.triangles.empty()) {
         solid_.bind();
@@ -336,6 +420,56 @@ void Viewport::paintGL(){
         solid_.release();
     }
     drawBuffer(lines_,mesh_.lines,GL_LINES);
+    if(rigVisible_)uploadRigBuffers();
+    // Cache actual model and belt vertices once, then animate GPU matrices and
+    // modulo-reduced UV phases without rebuilding geometry on every frame.
+    auto drawRigMesh=[&](const std::string& resource,const QMatrix4x4& world,
+                         const QString& layer,float uvScroll){
+        const auto it=rigGpuMeshes_.find(resource);
+        if(it==rigGpuMeshes_.end())return;
+        auto& mesh=*it->second;
+        const bool transparent=layer=="translucent";
+        if(transparent){
+            glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+        }
+        shader_.setUniformValue("uMvp",mvp_*world);
+        shader_.setUniformValue("uNormalMat",world.normalMatrix());
+        shader_.setUniformValue("uUvScroll",uvScroll);
+        shader_.setUniformValue("uRenderLayer",layer=="cutout"?1:0);
+        mesh.vertices.bind();
+        glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
+        glEnableVertexAttribArray(2);glEnableVertexAttribArray(3);
+        glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(Vertex),reinterpret_cast<const void*>(offsetof(Vertex,x)));
+        glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,sizeof(Vertex),reinterpret_cast<const void*>(offsetof(Vertex,r)));
+        glVertexAttribPointer(2,3,GL_FLOAT,GL_FALSE,sizeof(Vertex),reinterpret_cast<const void*>(offsetof(Vertex,nx)));
+        glVertexAttribPointer(3,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),reinterpret_cast<const void*>(offsetof(Vertex,u)));
+        for(const auto& draw:mesh.draws){
+            QOpenGLTexture* texture=draw.useTexture?getTexture(draw.texture,draw.material):nullptr;
+            shader_.setUniformValue("uTextured",int(texture!=nullptr));
+            if(texture)texture->bind(0);
+            glDrawArrays(GL_TRIANGLES,GLint(draw.first),GLsizei(draw.count));
+        }
+        shader_.setUniformValue("uTextured",0);
+        mesh.vertices.release();
+        if(transparent)glDisable(GL_BLEND);
+    };
+    if(rigVisible_)for(const auto& [id,pose]:rigPose_.components){
+        Q_UNUSED(id);
+        if(!pose.visible||pose.modelId.empty())continue;
+        drawRigMesh(pose.modelId,pose.world,pose.renderLayer,0.0f);
+    }
+    QMatrix4x4 beltFrame;beltFrame.setToIdentity();
+    if(rigVisible_)for(const auto& [id,distance]:rigPose_.beltDistanceBlocks){
+        const auto repeat=rigBeltRepeats_.find(id);
+        if(repeat==rigBeltRepeats_.end()||repeat->second<=0)continue;
+        double phase=std::fmod(distance,repeat->second);
+        if(phase<0)phase+=repeat->second;
+        drawRigMesh("__belt/"+id,beltFrame,"cutout",float(phase/repeat->second));
+    }
+    shader_.setUniformValue("uMvp",mvp_);
+    shader_.setUniformValue("uNormalMat",unrotated.normalMatrix());
+    shader_.setUniformValue("uUvScroll",0.0f);
+    shader_.setUniformValue("uRenderLayer",0);
     vao_.release();shader_.release();
     glDisable(GL_DEPTH_TEST);
     // Child QWidget composites with the rest of the native desktop UI.

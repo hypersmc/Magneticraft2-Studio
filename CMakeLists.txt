@@ -24,12 +24,23 @@ if(NOT STUDIO_HEADLESS_ONLY)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Core Widgets Gui OpenGL OpenGLWidgets)
     find_package(ZLIB REQUIRED)
     set(CMAKE_AUTOMOC ON)
+    set(CMAKE_AUTORCC ON)
     add_executable(magneticraft2-studio
         src/main.cpp
         src/io/ProjectIO.hpp src/io/ProjectIO.cpp
+        src/io/AnimationExport.hpp src/io/AnimationExport.cpp
+        src/io/VisualContract.hpp src/io/VisualContract.cpp
+        src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+        resources/visual-runtime.qrc
+        src/io/RigTransforms.hpp src/io/RigTransforms.cpp
+        src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
+        src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
         src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
         src/io/TextureAssets.hpp src/io/TextureAssets.cpp
         src/ui/MainWindow.hpp src/ui/MainWindow.cpp
+        src/ui/AnimationWorkspace.hpp src/ui/AnimationWorkspace.cpp
+        src/io/RigAssetCache.hpp src/io/RigAssetCache.cpp
+        src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
         src/ui/StartPage.hpp src/ui/StartPage.cpp
         src/ui/Viewport.hpp src/ui/Viewport.cpp
         src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
@@ -66,7 +77,7 @@ if(STUDIO_BUILD_TESTS)
             src/ui/Viewport.hpp src/ui/Viewport.cpp)
         target_link_libraries(studio-model-ui-tests PRIVATE studio_core
             Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test)
-        add_executable(studio-io-tests tests/test_io.cpp src/io/ProjectIO.hpp src/io/ProjectIO.cpp)
+        add_executable(studio-io-tests tests/test_io.cpp src/io/ProjectIO.hpp src/io/ProjectIO.cpp src/io/AnimationExport.hpp src/io/AnimationExport.cpp src/io/VisualContract.hpp src/io/VisualContract.cpp)
         target_link_libraries(studio-io-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-io-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-io-tests COMMAND studio-io-tests)
@@ -74,6 +85,30 @@ if(STUDIO_BUILD_TESTS)
         target_link_libraries(studio-import-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-import-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-import-tests COMMAND studio-import-tests)
+
+        add_executable(studio-visual-contract-tests tests/test_visual_contract.cpp
+            src/io/VisualContract.hpp src/io/VisualContract.cpp
+            src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+            resources/visual-runtime.qrc)
+        target_link_libraries(studio-visual-contract-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
+        target_compile_definitions(studio-visual-contract-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+        add_test(NAME studio-visual-contract-tests COMMAND studio-visual-contract-tests)
+
+        add_executable(studio-rig-preview-tests tests/test_rig_preview.cpp
+            src/io/RigAssetCache.hpp src/io/RigAssetCache.cpp
+            src/io/VisualContract.hpp src/io/VisualContract.cpp
+            src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+            resources/visual-runtime.qrc
+            src/io/RigTransforms.hpp src/io/RigTransforms.cpp
+            src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
+            src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
+            src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
+            src/io/TextureAssets.hpp src/io/TextureAssets.cpp)
+        target_link_libraries(studio-rig-preview-tests PRIVATE studio_core Qt6::Core Qt6::Gui ZLIB::ZLIB)
+        target_compile_definitions(studio-rig-preview-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+        add_test(NAME studio-rig-preview-tests COMMAND studio-rig-preview-tests)
+
+
         add_executable(studio-texture-assets-tests tests/test_texture_assets.cpp
             src/io/TextureAssets.cpp src/io/TextureAssets.hpp
             src/io/BlockModelImport.cpp src/io/BlockModelImport.hpp)
@@ -83,14 +118,39 @@ if(STUDIO_BUILD_TESTS)
         add_executable(studio-uv-overview-tests tests/test_uv_overview.cpp
             src/ui/UvFaceOverview.hpp src/ui/UvFaceOverview.cpp)
         target_link_libraries(studio-uv-overview-tests PRIVATE studio_core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+
+        add_executable(studio-runtime-ui-tests tests/test_visual_runtime_ui.cpp
+            src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
+            src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+            resources/visual-runtime.qrc
+            src/ui/Viewport.hpp src/ui/Viewport.cpp
+            src/io/VisualContract.hpp src/io/VisualContract.cpp
+            src/io/RigTransforms.hpp src/io/RigTransforms.cpp
+            src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
+            src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
+            src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
+            src/io/TextureAssets.hpp src/io/TextureAssets.cpp)
+        target_link_libraries(studio-runtime-ui-tests PRIVATE studio_core
+            Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test ZLIB::ZLIB)
+        target_compile_definitions(studio-runtime-ui-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
+            src/ui/AnimationWorkspace.hpp src/ui/AnimationWorkspace.cpp
+            src/io/RigAssetCache.hpp src/io/RigAssetCache.cpp
+            src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
+            src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+            resources/visual-runtime.qrc
+            src/io/VisualContract.hpp src/io/VisualContract.cpp
+            src/io/RigTransforms.hpp src/io/RigTransforms.cpp
+            src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
+            src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
             src/ui/StartPage.hpp src/ui/StartPage.cpp
             src/ui/Viewport.hpp src/ui/Viewport.cpp
             src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
             src/ui/UvEditor.hpp src/ui/UvEditor.cpp
         src/ui/UvFaceOverview.hpp src/ui/UvFaceOverview.cpp
             src/io/ProjectIO.hpp src/io/ProjectIO.cpp
+        src/io/AnimationExport.hpp src/io/AnimationExport.cpp
             src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
             src/io/TextureAssets.hpp src/io/TextureAssets.cpp)
         target_link_libraries(studio-editor-ui-tests PRIVATE studio_core

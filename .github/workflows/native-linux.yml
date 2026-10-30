@@ -1,7 +1,7 @@
 name: Native Linux Build
 on:
   push:
-    branches: [native-linux, main]
+    branches: [native-linux, main, feature/json-animation-export]
   pull_request:
     branches: [main]
 jobs:
@@ -30,9 +30,11 @@ jobs:
       - name: Ore Washer reference model import screenshot
         run: timeout 20s env LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --sample-washer --smoke --screenshot build/studio-washer.png
       - name: Native editor UX smoke test (workspaces/outliner)
-        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-editor-ui-tests build/studio-editor-ux.png build/studio-uv-workspace.png
+        run: timeout 45s env LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-editor-ui-tests build/studio-editor-ux.png build/studio-uv-workspace.png build/studio-animate-workspace.png
       - name: Six-face UV overview mouse test
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-uv-overview-tests build/studio-uv-six-faces.png
+      - name: Native animation rig OpenGL interaction test
+        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-runtime-ui-tests build/studio-animation-rig.png
       - name: Preserve GUI preview
         uses: actions/upload-artifact@v4
         with:
@@ -46,3 +48,5 @@ jobs:
             build/studio-textured.png
             build/studio-uv-six-faces.png
             build/studio-uv-workspace.png
+            build/studio-animate-workspace.png
+            build/studio-animation-rig.png

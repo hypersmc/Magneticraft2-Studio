@@ -96,8 +96,14 @@ BlockModelImportResult importBlockModel(const QByteArray& json,const Project& pr
         QString defaultTexture;
         for(int face=0;face<6;face++){
             const QJsonObject data=faces.value(names[face]).toObject();
-            if(data.isEmpty())continue;
+            if(data.isEmpty()){part.faces[face].enabled=false;continue;}
             const QString id=textureOf(data.value("texture").toString(),textures);
+            if(id.isEmpty()){
+                part.faces[face].texture="studio:missing_resource";
+                if(defaultTexture.isEmpty())defaultTexture="studio:missing_resource";
+                result.warnings << QString("Element %1 face %2 has an unresolved texture slot")
+                    .arg(i+1).arg(names[face]);
+            }
             if(!id.isEmpty()){
                 part.faces[face].texture=id.toStdString();
                 if(defaultTexture.isEmpty())defaultTexture=id;
