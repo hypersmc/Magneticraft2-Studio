@@ -9,12 +9,50 @@
 #include <QJsonDocument>
 #include <QVector3D>
 #include <QTemporaryDir>
+#include <QByteArray>
+#include <QVector>
+#include <QFileInfo>
+#include <zlib.h>
 #include <cassert>
 #include <cmath>
 #include <iostream>
 using namespace studio;
 static QByteArray read(const QString& p){QFile f(p);assert(f.open(QIODevice::ReadOnly));return f.readAll();}
 static bool near(double x,double y,double eps=1e-4){return std::abs(x-y)<eps;}
+
+static void put16(QByteArray& out,quint16 n){
+    out.append(char(n&255));out.append(char((n>>8)&255));
+}
+static void put32(QByteArray& out,quint32 n){put16(out,quint16(n));put16(out,quint16(n>>16));}
+static QByteArray zipStored(const QVector<QPair<QByteArray,QByteArray>>& files){
+    QByteArray zip;
+    struct Central{QByteArray name;quint32 crc=0,size=0,offset=0;};
+    QVector<Central> dirs;
+    for(const auto& item:files){
+        const QByteArray& name=item.first,& bytes=item.second;
+        Central entry{name,quint32(crc32(0L,Z_NULL,0)),quint32(bytes.size()),quint32(zip.size())};
+        entry.crc=quint32(crc32(entry.crc,
+            reinterpret_cast<const Bytef*>(bytes.constData()),uInt(bytes.size())));
+        put32(zip,0x04034b50);put16(zip,20);put16(zip,0);put16(zip,0);
+        put16(zip,0);put16(zip,0);put32(zip,entry.crc);put32(zip,entry.size);
+        put32(zip,entry.size);put16(zip,quint16(name.size()));put16(zip,0);
+        zip+=name;zip+=bytes;
+        dirs.push_back(entry);
+    }
+    const quint32 start=quint32(zip.size());
+    for(const auto& entry:dirs){
+        put32(zip,0x02014b50);put16(zip,20);put16(zip,20);put16(zip,0);put16(zip,0);
+        put16(zip,0);put16(zip,0);put32(zip,entry.crc);put32(zip,entry.size);
+        put32(zip,entry.size);put16(zip,quint16(entry.name.size()));put16(zip,0);
+        put16(zip,0);put16(zip,0);put16(zip,0);put32(zip,0);put32(zip,entry.offset);
+        zip+=entry.name;
+    }
+    const quint32 directorySize=quint32(zip.size())-start;
+    put32(zip,0x06054b50);put16(zip,0);put16(zip,0);put16(zip,quint16(dirs.size()));
+    put16(zip,quint16(dirs.size()));put32(zip,directorySize);put32(zip,start);put16(zip,0);
+    return zip;
+}
+
 int main(int argc,char** argv){
     QCoreApplication app(argc,argv);
     const QString root=QString(STUDIO_TEST_SOURCE_DIR)+"/tests/fixtures/animation-v1/";
@@ -64,6 +102,46 @@ int main(int argc,char** argv){
             assert(!modified.components.at(first.toStdString()).visible);
         }
     }
+    // End users do NOT have a source checkout. Read each actual manifest and
+    // scene out of an installed mod-like JAR (ZIP), without unzip or filesystem
+    // extraction and without guessing physical angle aliases.
+    QVector<QPair<QByteArray,QByteArray>> jarEntries;
+    for(const auto& machine:machines){
+        for(const auto& folder:QStringList{"machine_visuals","animations"}){
+            const QString resource="assets/magneticraft2/"+folder+"/"+machine+".json";
+            jarEntries.append({resource.toUtf8(),read(root+folder+"/"+machine+".json")});
+        }
+    }
+    for(const auto& model:QStringList{"primitive_grinder_axle","primitive_grinder_rotor"}){
+        const QString path="assets/magneticraft2/models/multiblock/"+model+".json";
+        jarEntries.append({path.toUtf8(),read(QString(STUDIO_TEST_SOURCE_DIR)+
+            "/tests/fixtures/rig-assets/"+path)});
+    }
+    QTemporaryDir modJarTest;assert(modJarTest.isValid());
+    const QString jarPath=modJarTest.filePath("magneticraft2-1.20.1-test.jar");
+    {
+        QFile file(jarPath);assert(file.open(QIODevice::WriteOnly));
+        const QByteArray zip=zipStored(jarEntries);
+        assert(file.write(zip)==zip.size());
+    }
+    for(const auto& machine:machines){
+        QString error;QJsonObject m,s;
+        if(!RigAssetLoader::loadMachineDefinition(jarPath,machine,m,s,error)){
+            std::cerr<<"JAR import failed: "<<error.toStdString()<<"\n";return 18;
+        }
+        QJsonObject wantedM,wantedS;
+        assert(VisualContract::parseObject(read(root+"machine_visuals/"+machine+".json"),wantedM,error));
+        assert(VisualContract::parseObject(read(root+"animations/"+machine+".json"),wantedS,error));
+        assert(m==wantedM && s==wantedS);
+        if(machine=="primitive_grinder"){
+            RigAssets modelAssets;
+            assert(RigAssetLoader::load(jarPath,s,modelAssets,machine));
+            assert(modelAssets.models.count("magneticraft2:multiblock/primitive_grinder_axle"));
+            assert(modelAssets.models.count("magneticraft2:multiblock/primitive_grinder_rotor"));
+            assert(modelAssets.missingModels.isEmpty());
+        }
+    }
+
     // Parent-only inheritance must resolve the actual texture-slot override;
     // the importer must NOT fill in five sides missing from the Java model.
     QTemporaryDir temp;assert(temp.isValid());

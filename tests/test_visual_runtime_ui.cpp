@@ -3,6 +3,7 @@
 #include "ui/Theme.hpp"
 #include <QApplication>
 #include <QDoubleSpinBox>
+#include <QComboBox>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -62,6 +63,28 @@ int main(int argc,char** argv){
     auto* viewport=dialog.findChild<Viewport*>("VisualRigViewport");
     auto* angle=dialog.findChild<QDoubleSpinBox*>("VisualPhysicalAngle");
     auto* numeric=dialog.findChild<QPlainTextEdit*>("VisualPoseSample");
+    // A Studio install ships its Java scene templates. Switching machines must
+    // load a *paired* manifest and scene, never reuse the Grinder default.
+    auto* machinePicker=dialog.findChild<QComboBox*>("VisualMachine");
+    if(!machinePicker)return 12;
+    const QStringList machines={"bronze_mechanical_lathe","mechanical_sifter",
+         "primitive_grinder","mechanical_ore_washer","bronze_stamp_mill",
+         "rotary_ore_classifier"};
+    for(const auto& id:machines){
+        machinePicker->setCurrentText(id);
+        QTest::qWait(15);
+        const auto current=dialog.metadata();
+        const auto manifestFixture=QJsonDocument::fromJson(
+            load(base+"animation-v1/machine_visuals/"+id+".json")).object();
+        const auto sceneFixture=QJsonDocument::fromJson(
+            load(base+"animation-v1/animations/"+id+".json")).object();
+        if(current.value("manifest").toObject()!=manifestFixture ||
+           current.value("scene").toObject()!=sceneFixture ||
+           numeric->toPlainText().startsWith("Cannot inspect")){
+            std::cerr<<"Bundled machine pairing failed: "<<id.toStdString()<<"\n";return 13;
+        }
+    }
+    machinePicker->setCurrentText(machine);
     if(!viewport||!angle||!numeric||!viewport->rendererReady()){
         std::cerr<<"OpenGL rig viewport or physical input controls unavailable\n";return 4;
     }
