@@ -1,0 +1,16 @@
+<RCC>
+  <qresource prefix="/studio/visual-v1">
+    <file alias="manifest/bronze_mechanical_lathe.json">../tests/fixtures/animation-v1/machine_visuals/bronze_mechanical_lathe.json</file>
+    <file alias="scene/bronze_mechanical_lathe.json">../tests/fixtures/animation-v1/animations/bronze_mechanical_lathe.json</file>
+    <file alias="manifest/mechanical_sifter.json">../tests/fixtures/animation-v1/machine_visuals/mechanical_sifter.json</file>
+    <file alias="scene/mechanical_sifter.json">../tests/fixtures/animation-v1/animations/mechanical_sifter.json</file>
+    <file alias="manifest/primitive_grinder.json">../tests/fixtures/animation-v1/machine_visuals/primitive_grinder.json</file>
+    <file alias="scene/primitive_grinder.json">../tests/fixtures/animation-v1/animations/primitive_grinder.json</file>
+    <file alias="manifest/mechanical_ore_washer.json">../tests/fixtures/animation-v1/machine_visuals/mechanical_ore_washer.json</file>
+    <file alias="scene/mechanical_ore_washer.json">../tests/fixtures/animation-v1/animations/mechanical_ore_washer.json</file>
+    <file alias="manifest/bronze_stamp_mill.json">../tests/fixtures/animation-v1/machine_visuals/bronze_stamp_mill.json</file>
+    <file alias="scene/bronze_stamp_mill.json">../tests/fixtures/animation-v1/animations/bronze_stamp_mill.json</file>
+    <file alias="manifest/rotary_ore_classifier.json">../tests/fixtures/animation-v1/machine_visuals/rotary_ore_classifier.json</file>
+    <file alias="scene/rotary_ore_classifier.json">../tests/fixtures/animation-v1/animations/rotary_ore_classifier.json</file>
+  </qresource>
+</RCC>

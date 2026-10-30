@@ -24,11 +24,14 @@ if(NOT STUDIO_HEADLESS_ONLY)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Core Widgets Gui OpenGL OpenGLWidgets)
     find_package(ZLIB REQUIRED)
     set(CMAKE_AUTOMOC ON)
+    set(CMAKE_AUTORCC ON)
     add_executable(magneticraft2-studio
         src/main.cpp
         src/io/ProjectIO.hpp src/io/ProjectIO.cpp
         src/io/AnimationExport.hpp src/io/AnimationExport.cpp
         src/io/VisualContract.hpp src/io/VisualContract.cpp
+        src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+        resources/visual-runtime.qrc
         src/io/RigTransforms.hpp src/io/RigTransforms.cpp
         src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
         src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
@@ -82,13 +85,17 @@ if(STUDIO_BUILD_TESTS)
         add_test(NAME studio-import-tests COMMAND studio-import-tests)
 
         add_executable(studio-visual-contract-tests tests/test_visual_contract.cpp
-            src/io/VisualContract.hpp src/io/VisualContract.cpp)
+            src/io/VisualContract.hpp src/io/VisualContract.cpp
+            src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+            resources/visual-runtime.qrc)
         target_link_libraries(studio-visual-contract-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-visual-contract-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-visual-contract-tests COMMAND studio-visual-contract-tests)
 
         add_executable(studio-rig-preview-tests tests/test_rig_preview.cpp
             src/io/VisualContract.hpp src/io/VisualContract.cpp
+            src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+            resources/visual-runtime.qrc
             src/io/RigTransforms.hpp src/io/RigTransforms.cpp
             src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
             src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
