@@ -97,7 +97,8 @@ int main(int argc,char** argv){
     assert(RigBeltMesh::build(belt,loop,beltError));
     assert(loop.draws.size()==1);
     assert(loop.draws.front().count==loop.triangles.size());
-    assert(loop.triangles.size()>=24*36 && loop.triangles.size()<=24*192);
+    // Two straight runs + two 16-segment half-turn arcs for equal radii.
+    assert(loop.triangles.size()==24*34);
     double minU=1e6,maxU=-1e6;
     for(const auto& v:loop.triangles){
         assert(std::isfinite(v.u)&&std::isfinite(v.v));
