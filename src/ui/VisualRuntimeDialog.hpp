@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include "io/RigAssetLoader.hpp"
 #include <QMap>
+#include <QElapsedTimer>
 class QComboBox;
 class QPlainTextEdit;
 class QDoubleSpinBox;
@@ -47,6 +48,7 @@ private:
     QDoubleSpinBox* playbackSpeed_=nullptr;
     QPushButton* playPause_=nullptr;
     QTimer* playbackTimer_=nullptr;
+    QElapsedTimer playbackClock_;
     QMap<QString,double> previewAngles_;
     RigAssets rigAssets_;
     bool rigAssetsLoaded_=false;

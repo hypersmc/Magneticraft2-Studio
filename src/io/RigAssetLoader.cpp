@@ -177,6 +177,18 @@ bool RigAssetLoader::load(const QString& selected,const QJsonObject& scene,RigAs
         const std::string key="__belt/"+it.key().toStdString();
         assets.models[key]=std::move(beltMesh);
         assets.beltRepeats[it.key().toStdString()]=data.value("texture_repeat").toDouble();
+        qsizetype allocated=0;
+        for(const auto& [id,bytes]:assets.textureProject.textures){
+            Q_UNUSED(id);
+            allocated+=qsizetype(bytes.size()*3/4);
+        }
+        if(assets.textureProject.textures.size()>=256 ||
+           allocated+png.size()>36LL*1024*1024){
+            assets.models.erase(key);
+            assets.beltRepeats.erase(it.key().toStdString());
+            assets.warnings<<"Direct belt PNG would exceed the project texture budget: "+full;
+            continue;
+        }
         assets.textureProject.textures[full.toStdString()]=png.toBase64().toStdString();
     }
     output=std::move(assets);

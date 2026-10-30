@@ -26,6 +26,7 @@
 #include <QSignalBlocker>
 #include <QSettings>
 #include <QDir>
+#include <algorithm>
 #include <QVBoxLayout>
 
 namespace studio {
@@ -181,7 +182,7 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     connect(texturesButton,&QPushButton::clicked,this,&VisualRuntimeDialog::loadExtraTextures);
     connect(playPause_,&QPushButton::clicked,this,[this](){
         if(playbackTimer_->isActive()){playbackTimer_->stop();playPause_->setText("Play");}
-        else{playbackTimer_->start();playPause_->setText("Pause");}
+        else{playbackClock_.restart();playbackTimer_->start();playPause_->setText("Pause");}
     });
     connect(playbackTimer_,&QTimer::timeout,this,&VisualRuntimeDialog::advancePlayback);
     status_=new QLabel(this);status_->setWordWrap(true);layout->addWidget(status_);
@@ -292,7 +293,8 @@ void VisualRuntimeDialog::advancePlayback(){
     if(source.isEmpty())return;
     // Explicit preview-only signed speed; neither synchronized nor written to
     // JSON as physical machine RPM. A bounded fixed timer avoids extra GL data.
-    const double degrees=previewAngles_.value(source,0)+playbackSpeed_->value()/30.0;
+    const double elapsed=playbackClock_.isValid()?std::clamp(playbackClock_.restart()/1000.0,0.0,0.15):0.0;
+    const double degrees=previewAngles_.value(source,0)+playbackSpeed_->value()*elapsed;
     const double wrapped=degrees>9999999?-9999999:degrees<-9999999?9999999:degrees;
     previewAngles_[source]=wrapped;
     {
