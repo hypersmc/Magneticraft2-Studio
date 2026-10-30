@@ -162,6 +162,10 @@ AnimationWorkspace::AnimationWorkspace(Viewport* viewport,QWidget* parent)
         pivots->addWidget(pivot_[i]);
     }
     pivotLayout->addLayout(pivots);
+    pivotFromPart_=new QPushButton("Use selected cuboid's pivot",pivotBox);
+    pivotFromPart_->setObjectName("AnimationUsePartPivot");
+    pivotFromPart_->setEnabled(false);
+    pivotLayout->addWidget(pivotFromPart_);
     auto* savePivot=new QPushButton("Apply pivot",pivotBox);
     savePivot->setObjectName("AnimationApplyPivot");
     pivotLayout->addWidget(savePivot);
@@ -227,6 +231,12 @@ AnimationWorkspace::AnimationWorkspace(Viewport* viewport,QWidget* parent)
         if(!selectedPartId_.isEmpty())emit bindPartRequested(selectedPartId_,{});
     });
     connect(applyRotation,&QPushButton::clicked,this,&AnimationWorkspace::changeRotation);
+    connect(pivotFromPart_,&QPushButton::clicked,this,[this](){
+        if(selectedPartId_.isEmpty())return;
+        const double coords[]{selectedPartPivot_.x,selectedPartPivot_.y,selectedPartPivot_.z};
+        for(int i=0;i<3;i++)pivot_[i]->setValue(coords[i]);
+        changePivot(); // Explicit user choice, never overwrite Java pivots silently.
+    });
     connect(savePivot,&QPushButton::clicked,this,&AnimationWorkspace::changePivot);
     connect(frame,&QPushButton::clicked,viewport_,&Viewport::frameRig);
     for(auto* state:{running_,overloaded_,worn_})
@@ -259,6 +269,7 @@ void AnimationWorkspace::setProject(const Project& p,const QJsonObject& saved){
     selectedPartStatus_->setText("Select a model cuboid in the Outliner to assign it to a joint.");
     bindPartButton_->setEnabled(false);
     unbindPartButton_->setEnabled(false);
+    pivotFromPart_->setEnabled(false);
     viewport_->clearRig();
     assets_.reset();
     previewAngles_.clear();
@@ -315,8 +326,10 @@ void AnimationWorkspace::setAuthoredProject(const Project& project){
     if(active_)rebuildAuthoredGeometry();
 }
 void AnimationWorkspace::setSelectedModelPart(const QString& partId,const QString& partName,
-                                             const QString& currentRig){
+                                             const QString& currentRig,Vec3 partPivot){
     selectedPartId_=partId;
+    selectedPartPivot_=partPivot;
+    pivotFromPart_->setEnabled(!partId.isEmpty());
     selectedPartStatus_->setText(partId.isEmpty()
         ?QString("Select a model cuboid in the Outliner to assign it to a joint.")
         :partName+(currentRig.isEmpty()?QString("  ·  not bound")

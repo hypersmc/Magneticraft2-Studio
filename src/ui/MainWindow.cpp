@@ -192,7 +192,7 @@ void MainWindow::buildUI(){
             snapshot();
             part.rigComponentId=component.toStdString();
             dirty_=true;
-            animationPanel_->setSelectedModelPart(q(part.id),q(part.name),component);
+            animationPanel_->setSelectedModelPart(q(part.id),q(part.name),component,part.pivot);
             animationPanel_->setAuthoredProject(project_);
             refreshAll();
             statusBar()->showMessage(component.isEmpty()
@@ -1114,8 +1114,8 @@ void MainWindow::setSelected(int index){
     if(animationPanel_){
         if(selected_>=0){
             const auto& part=project_.parts[std::size_t(selected_)];
-            animationPanel_->setSelectedModelPart(q(part.id),q(part.name),q(part.rigComponentId));
-        }else animationPanel_->setSelectedModelPart({},{},{});
+            animationPanel_->setSelectedModelPart(q(part.id),q(part.name),q(part.rigComponentId),part.pivot);
+        }else animationPanel_->setSelectedModelPart({},{},{},Vec3{});
     }
     if(index>=0 && mode_)mode_->setCurrentIndex(1);
     refreshPartTree();refreshInspector();refreshScene();

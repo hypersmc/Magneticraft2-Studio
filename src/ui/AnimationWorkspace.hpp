@@ -31,7 +31,8 @@ public:
     QStringList componentIds() const;
     QStringList boundComponentIds() const;
     void setAuthoredProject(const Project& project);
-    void setSelectedModelPart(const QString& partId,const QString& partName,const QString& currentRig);
+    void setSelectedModelPart(const QString& partId,const QString& partName,
+                              const QString& currentRig,Vec3 partPivot);
     QString selectedComponentId() const;
     void selectComponent(const QString& id);
     QJsonObject metadata() const;
@@ -84,6 +85,8 @@ private:
     QLabel* selectedPartStatus_=nullptr;
     QPushButton* bindPartButton_=nullptr;
     QPushButton* unbindPartButton_=nullptr;
+    QPushButton* pivotFromPart_=nullptr;
+    Vec3 selectedPartPivot_{};
     QTimer* timer_=nullptr;
     QElapsedTimer clock_;
     QJsonObject manifest_,scene_;
