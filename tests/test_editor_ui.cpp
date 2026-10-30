@@ -166,6 +166,9 @@ int main(int argc,char** argv){
     if(beforeFrame.isNull()||afterFrame.isNull()||beforeFrame==afterFrame){
         qCritical("Authored drum cuboid did not visually rotate");return 28;
     }
+    if(argc>3 && !editor.grab().save(QString::fromLocal8Bit(argv[3]))){
+        qCritical("Could not capture integrated Animate workspace");return 29;
+    }
     model->click();QTest::qWait(130);
     if(animation->isVisible()||!model->isChecked()||!viewport->isVisible()){
         qCritical("Leaving Animate hid the main viewport or leaked workspace");return 24;
