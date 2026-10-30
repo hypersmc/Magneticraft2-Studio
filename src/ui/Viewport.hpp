@@ -38,6 +38,7 @@ public:
                       const std::map<std::string,std::string>& textures,
                       const std::map<std::string,double>& beltRepeats={});
     void setRigPose(const RigPose& pose);
+    void setRigVisible(bool visible); // Share model viewport without destroying cached meshes.
     void clearRig();
     void frameRig();
     void resetCamera();
@@ -107,6 +108,8 @@ private:
     std::map<std::string,Geometry> rigSourceMeshes_;
     std::map<std::string,std::unique_ptr<RigGpuModel>> rigGpuMeshes_;
     RigPose rigPose_;
+    std::map<std::string,std::string> rigTextures_; // Independent from authored project PNGs.
+    bool rigVisible_=false;
     std::map<std::string,double> rigBeltRepeats_;
     bool rigGpuDirty_=false;
     struct CachedTexture { std::size_t signature=0;std::unique_ptr<QOpenGLTexture> gpu; };

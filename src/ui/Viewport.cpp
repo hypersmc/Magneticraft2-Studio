@@ -96,10 +96,15 @@ void Viewport::setRigModels(const std::map<std::string,Geometry>& models,
                             const std::map<std::string,double>& beltRepeats){
     rigSourceMeshes_=models;
     rigBeltRepeats_=beltRepeats;
-    document_.textures=textures; // Actual imported PNG bytes, never fake paths.
+    rigTextures_=textures; // Never overwrite the current authored project's textures.
     texturesDirty_=true;
     rigGpuDirty_=true; // Uploaded only after GL context is current.
     update();
+}
+void Viewport::setRigVisible(bool visible){
+    if(rigVisible_==visible)return;
+    rigVisible_=visible;
+    updateHud();update();
 }
 void Viewport::setRigPose(const RigPose& pose){
     rigPose_=pose; // Only matrices/models/visibility change each sample.
@@ -108,6 +113,8 @@ void Viewport::setRigPose(const RigPose& pose){
 void Viewport::clearRig(){
     rigSourceMeshes_.clear();
     rigBeltRepeats_.clear();
+    rigTextures_.clear();
+    texturesDirty_=true;
     rigPose_={};
     rigGpuDirty_=true;
     update();
@@ -253,11 +260,11 @@ void Viewport::updateHud(){
     if(!hud_||!help_)return;
     const bool visible=options_.showFormed;
     hud_->setVisible(visible);help_->setVisible(visible);
-    if(overlay_)overlay_->setVisible(visible);
+    if(overlay_)overlay_->setVisible(visible && !rigVisible_);
     const QString tool=activeTool_=='b'?"DRAW CUBE":activeTool_=='v'?"SELECT":activeTool_=='w'?"MOVE":activeTool_=='e'?"ROTATE":"RESIZE";
     const QString camera=cameraPreset_==1?"TOP":cameraPreset_==2?"FRONT":cameraPreset_==3?"RIGHT":"PERSPECTIVE";
-    hud_->setText(QString("MODEL  /  %1    ·    %2    ·    SNAP %3    ·    Y %4")
-        .arg(tool,camera,QString::number(gridStep_,'g',3),QString::number(workPlane_,'f',2)));
+    hud_->setText(QString("%5  /  %1    ·    %2    ·    SNAP %3    ·    Y %4")
+        .arg(tool,camera,QString::number(gridStep_,'g',3),QString::number(workPlane_,'f',2),rigVisible_?"ANIMATE":"MODEL"));
     hud_->adjustSize();
     help_->setText(activeTool_=='b'?"Click-drag grid: draw cuboid   ·   Scroll: zoom   ·   Right-drag: pan":
         "Click: select   ·   RGB: axis   ·   Color squares: plane   ·   White center: free/uniform   ·   Scroll: zoom");
@@ -347,8 +354,11 @@ static QImage missingResourceChecker(){
     return image;
 }
 QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& material){
-    const auto source=document_.textures.find(id);
-    const bool embedded=!id.empty()&&source!=document_.textures.end();
+    const auto authored=document_.textures.find(id);
+    const auto imported=rigTextures_.find(id);
+    const std::string* png=authored!=document_.textures.end()?&authored->second:
+        imported!=rigTextures_.end()?&imported->second:nullptr;
+    const bool embedded=!id.empty()&&png;
     const std::string key=embedded?id:(id.empty()?"__fallback/"+material:"__missing/"+id);
     auto found=textureCache_.find(key);
     // IDs are immutable while editing. Cache invalidation happens explicitly
@@ -356,7 +366,7 @@ QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& ma
     if(found!=textureCache_.end())return found->second.gpu.get();
     QImage image;
     if(embedded){
-        const QByteArray bytes=QByteArray::fromBase64(QByteArray::fromStdString(source->second));
+        const QByteArray bytes=QByteArray::fromBase64(QByteArray::fromStdString(*png));
         image=QImage::fromData(bytes,"PNG");
         if(image.width()>4096||image.height()>4096)image=QImage();
     }
@@ -369,7 +379,7 @@ QOpenGLTexture* Viewport::getTexture(const std::string& id,const std::string& ma
     gpu->setMinificationFilter(QOpenGLTexture::Nearest);
     gpu->setMagnificationFilter(QOpenGLTexture::Nearest);
     CachedTexture& cache=textureCache_[key];
-    cache.signature=embedded?source->second.size():0;
+    cache.signature=embedded?png->size():0;
     cache.gpu=std::move(gpu);
     return cache.gpu.get();
 }
@@ -407,7 +417,7 @@ void Viewport::paintGL(){
         solid_.release();
     }
     drawBuffer(lines_,mesh_.lines,GL_LINES);
-    uploadRigBuffers();
+    if(rigVisible_)uploadRigBuffers();
     // Cache actual model and belt vertices once, then animate GPU matrices and
     // modulo-reduced UV phases without rebuilding geometry on every frame.
     auto drawRigMesh=[&](const std::string& resource,const QMatrix4x4& world,
@@ -440,13 +450,13 @@ void Viewport::paintGL(){
         mesh.vertices.release();
         if(transparent)glDisable(GL_BLEND);
     };
-    for(const auto& [id,pose]:rigPose_.components){
+    if(rigVisible_)for(const auto& [id,pose]:rigPose_.components){
         Q_UNUSED(id);
         if(!pose.visible||pose.modelId.empty())continue;
         drawRigMesh(pose.modelId,pose.world,pose.renderLayer,0.0f);
     }
     QMatrix4x4 beltFrame;beltFrame.setToIdentity();
-    for(const auto& [id,distance]:rigPose_.beltDistanceBlocks){
+    if(rigVisible_)for(const auto& [id,distance]:rigPose_.beltDistanceBlocks){
         const auto repeat=rigBeltRepeats_.find(id);
         if(repeat==rigBeltRepeats_.end()||repeat->second<=0)continue;
         double phase=std::fmod(distance,repeat->second);
