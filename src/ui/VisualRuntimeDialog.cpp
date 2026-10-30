@@ -253,7 +253,8 @@ void VisualRuntimeDialog::validate(){
 void VisualRuntimeDialog::sample(){
     QJsonObject m,s;QString error;
     if(!parsePair(m,s,error)){
-        preview_->setPlainText("Cannot inspect invalid scene:\n"+error);return;
+        preview_->setPlainText("Cannot inspect invalid scene:\n"+error);
+        rigViewport_->setRigPose(RigPose{});return;
     }
     m["_studio_machine"]=machine_->currentText();
     QMap<QString,double> inputs;
@@ -302,30 +303,37 @@ void VisualRuntimeDialog::loadRigAssets(){
        "Choose mod resources root containing assets/ (e.g. src/main/resources)",
        settings.value("animation/asset-root").toString());
     if(folder.isEmpty())return;
-    QJsonObject m,s;QString error;
-    if(!parsePair(m,s,error)){
-        QMessageBox::warning(this,"Cannot load model geometry from invalid scene",error);return;
+    QString error;
+    if(!loadAssetsFromDirectory(folder,error)){
+        QMessageBox::warning(this,"Cannot load scene models",error);return;
     }
-    RigAssets imported;
-    if(!RigAssetLoader::load(folder,s,imported,machine_->currentText())){
-        QMessageBox::warning(this,"Cannot read local model assets",imported.error);return;
-    }
-    rigAssets_=std::move(imported);
-    rigAssetsLoaded_=true;
     settings.setValue("animation/asset-root",folder);
-    rigViewport_->setRigModels(rigAssets_.models,rigAssets_.textureProject.textures,
-                              rigAssets_.beltRepeats);
-    sample();
-    rigViewport_->frameRig();
-    const QString message=QString("Real models: %1 loaded, %2 unresolved; PNGs: %3 missing.")
-        .arg(rigAssets_.loadedModels.size()).arg(rigAssets_.missingModels.size())
-        .arg(rigAssets_.missingTextures.size());
-    rigAssetStatus_->setText(message);
-    rigAssetStatus_->setToolTip((rigAssets_.missingModels+rigAssets_.missingTextures+rigAssets_.warnings).join("\n"));
+    const QString message=rigAssetStatus_->text();
     if(!rigAssets_.warnings.isEmpty()||!rigAssets_.missingModels.isEmpty()){
         QMessageBox::information(this,"Rig preview dependencies",
             message+"\n\n"+(rigAssets_.missingModels+rigAssets_.warnings).mid(0,12).join("\n"));
     }
+}
+
+bool VisualRuntimeDialog::loadAssetsFromDirectory(const QString& folder,QString& error){
+    QJsonObject manifest,scene;
+    if(!parsePair(manifest,scene,error))return false;
+    RigAssets loaded;
+    if(!RigAssetLoader::load(folder,scene,loaded,machine_->currentText())){
+        error=loaded.error;return false;
+    }
+    rigAssets_=std::move(loaded);
+    rigAssetsLoaded_=true;
+    rigViewport_->setRigModels(rigAssets_.models,rigAssets_.textureProject.textures,
+                              rigAssets_.beltRepeats);
+    sample();
+    rigViewport_->frameRig();
+    rigAssetStatus_->setText(QString("Real models: %1 loaded, %2 unresolved; PNGs: %3 missing.")
+        .arg(rigAssets_.loadedModels.size()).arg(rigAssets_.missingModels.size())
+        .arg(rigAssets_.missingTextures.size()));
+    rigAssetStatus_->setToolTip(
+        (rigAssets_.missingModels+rigAssets_.missingTextures+rigAssets_.warnings).join("\n"));
+    error.clear();return true;
 }
 void VisualRuntimeDialog::loadExtraTextures(){
     if(!rigAssetsLoaded_){QMessageBox::information(this,"Load models first",

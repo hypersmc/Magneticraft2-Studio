@@ -24,6 +24,7 @@ class VisualRuntimeDialog final : public QDialog {
 public:
     explicit VisualRuntimeDialog(const QJsonObject& existing,QWidget* parent=nullptr);
     QJsonObject metadata() const;
+    bool loadAssetsFromDirectory(const QString& folder,QString& error);
 private:
     void importManifest();
     void importScene();
