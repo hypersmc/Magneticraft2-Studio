@@ -1,5 +1,6 @@
 #include "io/RigTransforms.hpp"
 #include "io/RigAssetLoader.hpp"
+#include "io/RigAssetCache.hpp"
 #include "io/RigBeltMesh.hpp"
 #include "io/VisualContract.hpp"
 #include <QCoreApplication>
@@ -123,6 +124,25 @@ int main(int argc,char** argv){
         QFile file(jarPath);assert(file.open(QIODevice::WriteOnly));
         const QByteArray zip=zipStored(jarEntries);
         assert(file.write(zip)==zip.size());
+    }
+    // Shared cache persists across workspace entries. Changing a shaft track
+    // or pivot leaves mesh dependencies unchanged and must reuse the same
+    // built geometry rather than reread the installed mod JAR.
+    {
+        QString error;QJsonObject m,s;
+        assert(RigAssetLoader::loadMachineDefinition(jarPath,"primitive_grinder",m,s,error));
+        const auto first=RigAssetCache::shared().get(
+            jarPath,"primitive_grinder",s,{},error);
+        assert(first && error.isEmpty());
+        QJsonObject edited=s;
+        auto components=edited.value("components").toObject();
+        auto part=components.begin().value().toObject();
+        part["pivot"]=QJsonArray{0.25,0.5,0.75};
+        components[components.begin().key()]=part;
+        edited["components"]=components;
+        const auto reused=RigAssetCache::shared().get(
+            jarPath,"primitive_grinder",edited,{},error);
+        assert(reused==first);
     }
     for(const auto& machine:machines){
         QString error;QJsonObject m,s;

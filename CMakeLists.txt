@@ -95,6 +95,7 @@ if(STUDIO_BUILD_TESTS)
         add_test(NAME studio-visual-contract-tests COMMAND studio-visual-contract-tests)
 
         add_executable(studio-rig-preview-tests tests/test_rig_preview.cpp
+            src/io/RigAssetCache.hpp src/io/RigAssetCache.cpp
             src/io/VisualContract.hpp src/io/VisualContract.cpp
             src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
             resources/visual-runtime.qrc

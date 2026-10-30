@@ -5,6 +5,11 @@
 #include "ui/Viewport.hpp"
 #include "ui/UvFaceOverview.hpp"
 #include "ui/UvEditor.hpp"
+#include "ui/AnimationWorkspace.hpp"
+#include "io/VisualContract.hpp"
+#include <QDoubleSpinBox>
+#include <QJsonObject>
+#include <QJsonArray>
 #include <QComboBox>
 #include <QApplication>
 #include <QToolButton>
@@ -14,6 +19,7 @@
 #include <QTest>
 #include <QTimer>
 #include <QDebug>
+#include <cmath>
 
 using namespace studio;
 int main(int argc,char** argv){
@@ -91,6 +97,52 @@ int main(int argc,char** argv){
     if(atlas->width()<260){qCritical("UV canvas is still constrained to a tiny dock");return 16;}
     if(argc>2 && !editor.grab().save(QString::fromLocal8Bit(argv[2]))){qCritical("Could not capture six-face UV workspace");return 17;}
     model->click();QTest::qWait(180);
+    // Animate lives in the same editor and uses the same OpenGL viewport and
+    // Studio project document. It must not create a second machine viewer.
+    auto* animate=editor.findChild<QToolButton*>("WorkspaceAnimate");
+    auto* animation=editor.findChild<AnimationWorkspace*>("AnimationWorkspacePanel");
+    if(!animate||!animation){qCritical("Missing integrated Animate workspace");return 18;}
+    animate->click();QTest::qWait(150);
+    if(!animate->isChecked()||!animation->isVisible()||!viewport->isVisible()){
+        qCritical("Animate did not reuse the existing visible 3D viewport");return 19;
+    }
+    auto* machine=animation->findChild<QComboBox*>("AnimationMachine");
+    auto* component=animation->findChild<QComboBox*>("AnimationComponent");
+    auto* source=animation->findChild<QComboBox*>("AnimationPhysicalSource");
+    auto* phase=animation->findChild<QDoubleSpinBox*>("AnimationRotationPhase");
+    auto* addRotation=animation->findChild<QPushButton*>("AnimationApplyRotation");
+    if(!machine||!component||!source||!phase||!addRotation)return 20;
+    machine->setCurrentText("mechanical_ore_washer");
+    QTest::qWait(120);
+    if(source->findText("trommel")<0||source->findText("mechanical_input")>=0){
+        qCritical("Ore Washer kept incorrect Grinder angle bindings");return 21;
+    }
+    component->setCurrentText("drum");
+    phase->setValue(45.0);
+    addRotation->click();
+    QTest::qWait(150);
+    QString error;
+    const auto runtime=animation->metadata();
+    if(!VisualContract::validatePair("mechanical_ore_washer",
+         runtime.value("manifest").toObject(),runtime.value("scene").toObject(),error)){
+        qCritical("Integrated rotation edit invalid: %s",qPrintable(error));return 22;
+    }
+    bool hasDrumRotation=false;
+    const auto groups=runtime.value("scene").toObject().value("animations").toObject();
+    for(auto it=groups.begin();it!=groups.end();++it)
+        for(const auto& value:it.value().toObject().value("tracks").toArray()){
+            const auto track=value.toObject();
+            if(track.value("target")=="drum"&&track.value("property")=="rotation"&&
+               std::abs(track.value("phase_degrees").toDouble()-45.0)<0.001)
+                hasDrumRotation=true;
+        }
+    if(!hasDrumRotation){
+        qCritical("Rotation edit was not applied to existing runtime scene");return 23;
+    }
+    model->click();QTest::qWait(130);
+    if(animation->isVisible()||!model->isChecked()||!viewport->isVisible()){
+        qCritical("Leaving Animate hid the main viewport or leaked workspace");return 24;
+    }
     if(argc>1 && !editor.grab().save(QString::fromLocal8Bit(argv[1]))){qCritical("Could not write UI screenshot");return 9;}
     qInfo("Editor UX test passed: Build, Model, UV, Outliner search and OpenGL");
     return 0;
