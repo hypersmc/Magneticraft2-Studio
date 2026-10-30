@@ -28,26 +28,21 @@ QString resourcePath(const QString& resource){
 }
 class Resolver {
 public:
-    explicit Resolver(QString root):root_(std::move(root)){}
+    explicit Resolver(const AssetSource& source):source_(source){}
     bool get(const QString& id,QJsonObject& resolved,QString& reason,int depth=0){
         if(!resourceId(id)){reason="Invalid model resource: "+id;return false;}
         if(depth>32){reason="Model inheritance exceeds 32 levels: "+id;return false;}
         if(cache_.contains(id)){resolved=cache_.value(id);return true;}
         if(visiting_.contains(id)){reason="Cyclic model inheritance at "+id;return false;}
         visiting_.insert(id);
-        const QString filename=root_.filePath(resourcePath(id));
-        QFileInfo info(filename);
-        if(!info.isFile() || info.size()>4*1024*1024 || info.size()<2){
-            reason="Missing/oversized baked model source "+id+" ("+filename+")";
-            visiting_.remove(id);return false;
-        }
-        QFile file(filename);
-        if(!file.open(QIODevice::ReadOnly)){
-            reason="Cannot read model "+id+": "+file.errorString();
+        QByteArray bytes;QString readError;
+        if(!source_.read(resourcePath(id),bytes,readError,4*1024*1024)){
+            reason=readError.isEmpty()?"Missing baked model "+id:
+                "Cannot read model "+id+": "+readError;
             visiting_.remove(id);return false;
         }
         QJsonParseError parse;
-        const auto doc=QJsonDocument::fromJson(file.readAll(),&parse);
+        const auto doc=QJsonDocument::fromJson(bytes,&parse);
         if(parse.error!=QJsonParseError::NoError || !doc.isObject()){
             reason="Invalid model JSON "+id+": "+parse.errorString();
             visiting_.remove(id);return false;
@@ -77,19 +72,11 @@ public:
         resolved=base;return true;
     }
 private:
-    QDir root_;
+    const AssetSource& source_;
     QHash<QString,QJsonObject> cache_;
     QSet<QString> visiting_;
 };
 
-QString normalizeRoot(const QString& selected){
-    QDir root(selected);
-    if(root.exists("assets"))return root.absolutePath();
-    if(root.dirName()=="assets"){
-        root.cdUp();return root.absolutePath();
-    }
-    return {};
-}
 QStringList modelsIn(const QJsonObject& scene){
     QSet<QString> required;
     const auto components=scene.value("components").toObject();
@@ -106,14 +93,13 @@ QStringList modelsIn(const QJsonObject& scene){
 bool RigAssetLoader::load(const QString& selected,const QJsonObject& scene,RigAssets& output,
                           const QString& javaMachine){
     RigAssets assets;
-    const QString root=normalizeRoot(selected);
-    if(root.isEmpty()){
-        output.error="Choose a directory containing assets/ (for a mod checkout, src/main/resources)";
-        return false;
+    AssetSource source;QString readError;
+    if(!source.open(selected,readError)){
+        output.error=readError;return false;
     }
-    // One geometry build per distinct model resource, never per animation
-    // frame. The actual preview uses the same Studio cuboid mesh builder.
-    Resolver resolver(root);
+    // Load all models from the distributed mod JAR or an unpacked assets root.
+    // The user never needs to download the Forge source checkout.
+    Resolver resolver(source);
     assets.textureProject=makeProject("Animated model assets",{5,5,5});
     assets.textureProject.cells.clear();
     assets.textureProject.parts.clear();
@@ -143,7 +129,7 @@ bool RigAssetLoader::load(const QString& selected,const QJsonObject& scene,RigAs
         for(const auto& warning:imported.warnings)
             assets.warnings.append(id+": "+warning);
     }
-    auto textures=importTextureAssets(assets.textureProject,root);
+    auto textures=importTextureAssets(assets.textureProject,selected);
     if(!textures.error.isEmpty())assets.warnings<<textures.error;
     assets.missingTextures=textures.missing;
     assets.warnings.append(textures.warnings);
@@ -158,12 +144,12 @@ bool RigAssetLoader::load(const QString& selected,const QJsonObject& scene,RigAs
             continue;
         }
         const QString relative="assets/"+full.section(':',0,0)+"/"+full.section(':',1);
-        QFile file(QDir(root).filePath(relative));
-        if(!file.exists() || file.size()>8*1024*1024 || !file.open(QIODevice::ReadOnly)){
-            assets.warnings<<"Missing or unreadable direct belt PNG "+full;
-            continue; // Never substitute a misleading procedurally textured belt.
+        QByteArray png;QString pngError;
+        if(!source.read(relative,png,pngError,8*1024*1024)){
+            assets.warnings<<"Direct belt PNG unavailable "+full+
+                (pngError.isEmpty()?QString():(": "+pngError));
+            continue; // Never generate fake textures for missing assets.
         }
-        const QByteArray png=file.readAll();
         const QImage decoded=QImage::fromData(png,"PNG");
         if(decoded.isNull()||decoded.width()>4096||decoded.height()>4096){
             assets.warnings<<"Invalid direct belt PNG "+full;
