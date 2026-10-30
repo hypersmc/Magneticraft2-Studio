@@ -26,6 +26,7 @@ public:
     explicit VisualRuntimeDialog(const QJsonObject& existing,QWidget* parent=nullptr);
     QJsonObject metadata() const;
     bool loadAssetsFromDirectory(const QString& folder,QString& error);
+    bool loadMachineFromJar(const QString& jarPath,QString& error);
 private:
     void importManifest();
     void importScene();
@@ -37,6 +38,9 @@ private:
     void syncAngleSource();
     void advancePlayback();
     bool loadBundledMachine(const QString& machine,bool confirmChanges);
+    bool applyMachineDefinition(const QString& machine,const QJsonObject& manifest,
+                                const QJsonObject& scene,bool confirmChanges);
+    void loadJarDialog();
     void updateSourcesLabel();
     bool parsePair(QJsonObject& manifest,QJsonObject& scene,QString& error);
     void refreshSources();

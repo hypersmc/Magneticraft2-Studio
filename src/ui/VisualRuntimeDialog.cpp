@@ -126,7 +126,11 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     pl->addLayout(controls);
 
     auto* assetRow=new QHBoxLayout;
-    auto* modelsButton=new QPushButton("Load actual mod model assets...",previewPanel);
+    auto* jarButton=new QPushButton("Open Magneticraft2 JAR...",previewPanel);
+    jarButton->setObjectName("VisualLoadJar");
+    jarButton->setToolTip("Read this machine's manifest, scene, actual models and PNGs from the installed mod JAR");
+    assetRow->addWidget(jarButton);
+    auto* modelsButton=new QPushButton("Load model assets from folder...",previewPanel);
     modelsButton->setObjectName("VisualLoadAssets");
     modelsButton->setToolTip("Choose the local mod's src/main/resources directory, or an unpacked resource pack with assets/");
     assetRow->addWidget(modelsButton);
@@ -166,6 +170,7 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     layout->addWidget(previewPanel,5);
     playbackTimer_=new QTimer(this);
     playbackTimer_->setInterval(33);
+    connect(jarButton,&QPushButton::clicked,this,&VisualRuntimeDialog::loadJarDialog);
     connect(modelsButton,&QPushButton::clicked,this,&VisualRuntimeDialog::loadRigAssets);
     connect(texturesButton,&QPushButton::clicked,this,&VisualRuntimeDialog::loadExtraTextures);
     connect(playPause_,&QPushButton::clicked,this,[this](){
@@ -275,42 +280,47 @@ void VisualRuntimeDialog::updateSourcesLabel(){
     sourceList_->setText("Java angles: "+angles.join(", ")+
         "    |    Java integers: "+(integers.isEmpty()?QString("none"):integers.join(", ")));
 }
-bool VisualRuntimeDialog::loadBundledMachine(const QString& machine,bool confirmChanges){
+bool VisualRuntimeDialog::applyMachineDefinition(const QString& machine,
+                                                 const QJsonObject& manifest,
+                                                 const QJsonObject& scene,
+                                                 bool confirmChanges){
     const bool modified=manifest_->toPlainText()!=manifestBaseline_ ||
                         scene_->toPlainText()!=sceneBaseline_;
     if(modified&&confirmChanges){
         const auto reply=QMessageBox::warning(this,"Replace edited machine definitions?",
-            "Changing machine loads its own Java manifest and animation scene. "
-            "Unsaved JSON edits in this dialog will be discarded.\n\n"
-            "Your saved Studio project remains unchanged until you press Save.",
+            "Loading another machine definition replaces unsaved JSON edits in this dialog.\n\n"
+            "Your existing Studio project remains unchanged until you press Save.",
             QMessageBox::Discard|QMessageBox::Cancel,QMessageBox::Cancel);
         if(reply!=QMessageBox::Discard)return false;
     }
-    QJsonObject m,s;QString error;
-    if(!VisualTemplates::bundled(machine,m,s,error)){
-        QMessageBox::warning(this,"Bundled machine missing",error);
-        return false;
-    }
     {
-        QSignalBlocker blockM(manifest_),blockS(scene_);
-        manifest_->setPlainText(pretty(m));
-        scene_->setPlainText(pretty(s));
+        QSignalBlocker blockM(manifest_),blockS(scene_),blockMachine(machine_);
+        machine_->setCurrentText(machine);
+        manifest_->setPlainText(pretty(manifest));
+        scene_->setPlainText(pretty(scene));
     }
     manifestBaseline_=manifest_->toPlainText();
     sceneBaseline_=scene_->toPlainText();
     activeMachine_=machine;
     if(playbackTimer_->isActive()){
-        playbackTimer_->stop();
-        playPause_->setText("Play");
+        playbackTimer_->stop();playPause_->setText("Play");
     }
     rigAssets_={};rigAssetsLoaded_=false;
     rigViewport_->setRigModels({},{});
     rigViewport_->setRigPose(RigPose{});
-    rigAssetStatus_->setText("Bundled Java v1 scene selected. Load models from a mod JAR or an unpacked assets folder.");
+    rigAssetStatus_->setText("Runtime v1 definitions loaded. Select a Magneticraft2 mod JAR to preview actual models.");
     updateSourcesLabel();
     syncAngleSource();
     validate();
     return true;
+}
+bool VisualRuntimeDialog::loadBundledMachine(const QString& machine,bool confirmChanges){
+    QJsonObject manifest,scene;QString error;
+    if(!VisualTemplates::bundled(machine,manifest,scene,error)){
+        QMessageBox::warning(this,"Bundled machine definition missing",error);
+        return false;
+    }
+    return applyMachineDefinition(machine,manifest,scene,confirmChanges);
 }
 void VisualRuntimeDialog::syncAngleSource(){
     const QString previous=angleSource_->currentText();
@@ -337,6 +347,36 @@ void VisualRuntimeDialog::advancePlayback(){
         shaftAngle_->setValue(wrapped);
     }
     sample();
+}
+bool VisualRuntimeDialog::loadMachineFromJar(const QString& jarPath,QString& error){
+    QJsonObject manifest,scene;
+    if(!RigAssetLoader::loadMachineDefinition(jarPath,machine_->currentText(),
+                                              manifest,scene,error))return false;
+    if(!applyMachineDefinition(machine_->currentText(),manifest,scene,true)){
+        error="The import was cancelled; your edited JSON is unchanged";
+        return false;
+    }
+    // Keep a valid imported scene even when a texture or model is unavailable.
+    // The rig loader reports those resources individually.
+    return loadAssetsFromDirectory(jarPath,error);
+}
+void VisualRuntimeDialog::loadJarDialog(){
+    const QString saved=QSettings().value("animation/mod-jar").toString();
+    const QString file=QFileDialog::getOpenFileName(this,
+        "Select an installed Magneticraft2 mod JAR",saved,
+        "Magneticraft2 mod (*.jar *.zip)");
+    if(file.isEmpty())return;
+    QString error;
+    if(!loadMachineFromJar(file,error)){
+        if(!error.startsWith("The import was cancelled"))
+            QMessageBox::warning(this,"Cannot import machine from mod JAR",error);
+        return;
+    }
+    QSettings().setValue("animation/mod-jar",file);
+    if(!rigAssets_.warnings.isEmpty()||!rigAssets_.missingModels.isEmpty())
+        QMessageBox::information(this,"Mod resources needing attention",
+            rigAssetStatus_->text()+"\n\n"+
+            (rigAssets_.missingModels+rigAssets_.warnings).mid(0,12).join("\n"));
 }
 void VisualRuntimeDialog::loadRigAssets(){
     QSettings settings;
@@ -387,7 +427,8 @@ void VisualRuntimeDialog::loadExtraTextures(){
     if(!report.error.isEmpty()){
         QMessageBox::warning(this,"Cannot import PNGs",report.error);return;
     }
-    rigViewport_->setRigModels(rigAssets_.models,rigAssets_.textureProject.textures);
+    rigViewport_->setRigModels(rigAssets_.models,rigAssets_.textureProject.textures,
+                              rigAssets_.beltRepeats);
     sample();
     rigAssetStatus_->setText(QString("Real models: %1 loaded, %2 unresolved; PNGs: %3 missing.")
         .arg(rigAssets_.loadedModels.size()).arg(rigAssets_.missingModels.size())

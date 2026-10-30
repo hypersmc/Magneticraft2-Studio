@@ -118,6 +118,8 @@ if(STUDIO_BUILD_TESTS)
 
         add_executable(studio-runtime-ui-tests tests/test_visual_runtime_ui.cpp
             src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
+            src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+            resources/visual-runtime.qrc
             src/ui/Viewport.hpp src/ui/Viewport.cpp
             src/io/VisualContract.hpp src/io/VisualContract.cpp
             src/io/RigTransforms.hpp src/io/RigTransforms.cpp
@@ -131,6 +133,8 @@ if(STUDIO_BUILD_TESTS)
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
             src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
+            src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
+            resources/visual-runtime.qrc
             src/io/VisualContract.hpp src/io/VisualContract.cpp
             src/io/RigTransforms.hpp src/io/RigTransforms.cpp
             src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
