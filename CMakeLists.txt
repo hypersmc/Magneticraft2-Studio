@@ -31,6 +31,7 @@ if(NOT STUDIO_HEADLESS_ONLY)
         src/io/VisualContract.hpp src/io/VisualContract.cpp
         src/io/RigTransforms.hpp src/io/RigTransforms.cpp
         src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
+        src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
         src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
         src/io/TextureAssets.hpp src/io/TextureAssets.cpp
         src/ui/MainWindow.hpp src/ui/MainWindow.cpp
@@ -90,6 +91,7 @@ if(STUDIO_BUILD_TESTS)
             src/io/VisualContract.hpp src/io/VisualContract.cpp
             src/io/RigTransforms.hpp src/io/RigTransforms.cpp
             src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
+            src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
             src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
             src/io/TextureAssets.hpp src/io/TextureAssets.cpp)
         target_link_libraries(studio-rig-preview-tests PRIVATE studio_core Qt6::Core Qt6::Gui ZLIB::ZLIB)

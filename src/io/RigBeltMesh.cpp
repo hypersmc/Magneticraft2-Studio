@@ -1,6 +1,7 @@
 #include "RigBeltMesh.hpp"
 #include <QJsonArray>
 #include <QVector3D>
+#include <QStringList>
 #include <algorithm>
 #include <cmath>
 #include <vector>
