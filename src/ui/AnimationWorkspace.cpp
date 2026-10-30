@@ -698,6 +698,22 @@ void AnimationWorkspace::changeRotation(){
         const int split=chosen.lastIndexOf('#');
         if(split>=0){name=chosen.left(split);index=chosen.mid(split+1).toInt();}
     }
+    // Runtime v1 permits one driven rotation for a target/condition.
+    // The New rotation choice must update the matching track rather than
+    // producing a duplicate that blocks saving with a modal error.
+    if(name.isEmpty()){
+        for(auto it=animations.begin();it!=animations.end()&&name.isEmpty();++it){
+            const auto tracks=it.value().toObject().value("tracks").toArray();
+            for(int i=0;i<tracks.size();++i){
+                const auto existing=tracks[i].toObject();
+                if(existing.value("target").toString()==target &&
+                   existing.value("property")=="rotation" &&
+                   existing.value("when").toString("always")==when_->currentText()){
+                    name=it.key();index=i;break;
+                }
+            }
+        }
+    }
     if(name.isEmpty()){
         name="studio_rotation";
         if(!animations.contains(name)){

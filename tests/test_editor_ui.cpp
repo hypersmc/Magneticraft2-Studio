@@ -137,6 +137,12 @@ int main(int argc,char** argv){
         qCritical("Ore Washer kept incorrect Grinder angle bindings");return 21;
     }
     component->setCurrentText("drum");
+    // Regression: pressing Add with the "New rotation" selection must
+    // update an existing target/condition track rather than create a
+    // duplicate invalid 'always' driver and open a modal error.
+    auto* rotationTracks=animation->findChild<QComboBox*>("AnimationRotationTrack");
+    if(!rotationTracks)return 31;
+    rotationTracks->setCurrentIndex(0);
     phase->setValue(45.0);
     qInfo("UX CHECKPOINT: editing rotation");
     addRotation->click();
