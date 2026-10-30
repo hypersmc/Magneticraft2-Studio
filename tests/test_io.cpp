@@ -150,7 +150,7 @@ int main(int argc,char**argv) {
     assert(authoredLoaded.project.parts.front().rigComponentId=="drum");
     Project plain=makeDemo();
     const auto oldParts=ProjectIO::encode(plain).value("parts").toArray();
-    assert(!oldParts.front().toObject().contains("rigComponent"));
+    assert(!oldParts.at(0).toObject().contains("rigComponent"));
 
     // Optional v1 animation metadata must survive old Studio document edits,
     // including unknown schema fields that the native project does not own.
