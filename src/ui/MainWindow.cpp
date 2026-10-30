@@ -183,6 +183,25 @@ void MainWindow::buildUI(){
     connect(animationPanel_,&AnimationWorkspace::componentsChanged,this,[this](){
         if(animateWorkspace_ && tree_)refreshPartTree();
     });
+    connect(animationPanel_,&AnimationWorkspace::bindPartRequested,this,
+            [this](const QString& partId,const QString& component){
+        if(project_.kind!=ProjectKind::Multiblock)return;
+        for(auto& part:project_.parts){
+            if(q(part.id)!=partId)continue;
+            if(q(part.rigComponentId)==component)return;
+            snapshot();
+            part.rigComponentId=component.toStdString();
+            dirty_=true;
+            animationPanel_->setSelectedModelPart(q(part.id),q(part.name),component);
+            animationPanel_->setAuthoredProject(project_);
+            refreshAll();
+            statusBar()->showMessage(component.isEmpty()
+                ?"Model cuboid unbound from animation"
+                :"Cuboid now follows animated component "+component,5000);
+            return;
+        }
+        statusBar()->showMessage("Choose a model cuboid from the Outliner first",5000);
+    });
     connect(animationPanel_,&AnimationWorkspace::message,this,[this](const QString& msg){
         statusBar()->showMessage(msg,6500);
     });
@@ -1036,6 +1055,10 @@ void MainWindow::refreshScene(){
     view.layer=formed?-1:layer_;
     view.gridY=formed?workPlane_->value():0.0;
     view.selectedPart=selected_;
+    if(animateWorkspace_ && animationPanel_){
+        for(const auto& name:animationPanel_->boundComponentIds())
+            view.hideRigComponents.insert(name.toStdString());
+    }
     viewport_->setScene(project_,view);
     layers_->setProject(&project_);layers_->setLayer(layer_);
     const auto detail=QString("%1%2 × %3 × %4   /   %5 construction cells   /   %6 model parts")
@@ -1088,6 +1111,12 @@ void MainWindow::setSelected(int index){
     if(index>=int(project_.parts.size())||index<0)index=-1;
     if(selected_==index)return;
     selected_=index;
+    if(animationPanel_){
+        if(selected_>=0){
+            const auto& part=project_.parts[std::size_t(selected_)];
+            animationPanel_->setSelectedModelPart(q(part.id),q(part.name),q(part.rigComponentId));
+        }else animationPanel_->setSelectedModelPart({},{},{});
+    }
     if(index>=0 && mode_)mode_->setCurrentIndex(1);
     refreshPartTree();refreshInspector();refreshScene();
 }
@@ -1096,7 +1125,11 @@ void MainWindow::snapshot(){
     if(undo_.size()>80)undo_.erase(undo_.begin());
     redo_.clear();
 }
-void MainWindow::commitChanged(){dirty_=true;refreshAll();}
+void MainWindow::commitChanged(){
+    dirty_=true;
+    if(animationPanel_)animationPanel_->setAuthoredProject(project_);
+    refreshAll();
+}
 void MainWindow::undo(){
     if(undo_.empty())return;
     redo_.push_back(project_);project_=std::move(undo_.back());undo_.pop_back();
