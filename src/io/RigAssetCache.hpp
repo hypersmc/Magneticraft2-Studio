@@ -26,6 +26,8 @@ private:
                      const QJsonObject& scene,const QString& vanilla) const;
     std::map<QString,std::shared_ptr<const RigAssets>> cached_;
     std::deque<QString> order_;
-    static constexpr int kMaxCachedMachines=3;
+    // Keep all six current runtime-v1 machine examples warm in one session.
+    // The cache is bounded, and serialized PNG/GL resources are not copied.
+    static constexpr int kMaxCachedMachines=6;
 };
 } // namespace studio
