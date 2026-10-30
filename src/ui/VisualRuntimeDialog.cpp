@@ -150,6 +150,10 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     assetRow->addWidget(rigAssetStatus_,1);
     pl->addLayout(assetRow);
 
+    auto* rigScope=new QLabel("ANIMATED COMPONENTS ONLY  /  Java-drawn static machine body, water, items and other effects are not imported.",previewPanel);
+    rigScope->setObjectName("ContextInfo");
+    rigScope->setWordWrap(true);
+    pl->addWidget(rigScope);
     auto* views=new QSplitter(Qt::Horizontal,previewPanel);
     rigViewport_=new Viewport(views);
     rigViewport_->setObjectName("VisualRigViewport");

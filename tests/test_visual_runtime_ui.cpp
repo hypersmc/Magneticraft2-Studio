@@ -1,11 +1,18 @@
 #include "ui/VisualRuntimeDialog.hpp"
 #include "ui/Viewport.hpp"
+#include "ui/Theme.hpp"
 #include <QApplication>
 #include <QDoubleSpinBox>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QPalette>
+#include <QStyleFactory>
+#include <QFont>
+#include <QColor>
+#include <vector>
+#include <utility>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPlainTextEdit>
@@ -31,6 +38,17 @@ static bool saveTexture(const QString& folder,const QString& id,const QColor& co
 }
 int main(int argc,char** argv){
     QApplication app(argc,argv);
+    app.setStyle(QStyleFactory::create("Fusion"));
+    QPalette pal=app.palette();
+    pal.setColor(QPalette::Window,QColor("#101920"));
+    pal.setColor(QPalette::WindowText,QColor("#dbe5ec"));
+    pal.setColor(QPalette::Base,QColor("#17252e"));
+    pal.setColor(QPalette::Text,QColor("#e5edf2"));
+    pal.setColor(QPalette::Button,QColor("#22323e"));
+    pal.setColor(QPalette::ButtonText,QColor("#e5edf2"));
+    pal.setColor(QPalette::Highlight,QColor("#aa673c"));
+    app.setPalette(pal);
+    app.setStyleSheet(editorStyle);
     const QString base=QString(STUDIO_TEST_SOURCE_DIR)+"/tests/fixtures/";
     const QString machine="primitive_grinder";
     const auto manifest=QJsonDocument::fromJson(load(base+"animation-v1/machine_visuals/"+machine+".json")).object();

@@ -131,7 +131,7 @@ void Viewport::frameRig(){
     target_=(low+high)*0.5f;
     const QVector3D extent=high-low;
     const double diameter=std::max(1.,double(extent.length()));
-    distance_=std::max(3.5,diameter*1.9);
+    distance_=std::max(2.7,diameter*1.55);
     update();
 }
 void Viewport::invalidateTextures(){
