@@ -139,6 +139,33 @@ int main(int argc,char** argv){
     if(!hasDrumRotation){
         qCritical("Rotation edit was not applied to existing runtime scene");return 23;
     }
+    // Bind an actual cuboid created in Studio (not a separate JAR model).
+    // The preview must move the original geometry under its Java rig driver.
+    QTreeWidgetItem* drumPart=nullptr;
+    for(int i=0;i<tree->topLevelItemCount();i++){
+        auto* group=tree->topLevelItem(i);
+        for(int k=0;k<group->childCount();k++){
+            auto* item=group->child(k);
+            if(item->text(0)=="Drum" && item->data(0,Qt::UserRole).toInt()>=0)
+                drumPart=item;
+        }
+    }
+    if(!drumPart)return 25;
+    tree->setCurrentItem(drumPart);QTest::qWait(100);
+    auto* bind=animation->findChild<QPushButton*>("AnimationBindPart");
+    auto* physicalAngle=animation->findChild<QDoubleSpinBox*>("AnimationPhysicalAngle");
+    if(!bind||!physicalAngle||!bind->isEnabled())return 26;
+    bind->click();QTest::qWait(250);
+    if(!animation->boundComponentIds().contains("drum")){
+        qCritical("A modeled cuboid could not be assigned to the drum joint");return 27;
+    }
+    physicalAngle->setValue(0);QTest::qWait(150);
+    const QImage beforeFrame=viewport->grabFramebuffer();
+    physicalAngle->setValue(90);QTest::qWait(180);
+    const QImage afterFrame=viewport->grabFramebuffer();
+    if(beforeFrame.isNull()||afterFrame.isNull()||beforeFrame==afterFrame){
+        qCritical("Authored drum cuboid did not visually rotate");return 28;
+    }
     model->click();QTest::qWait(130);
     if(animation->isVisible()||!model->isChecked()||!viewport->isVisible()){
         qCritical("Leaving Animate hid the main viewport or leaked workspace");return 24;

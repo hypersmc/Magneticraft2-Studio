@@ -138,6 +138,20 @@ int main(int argc,char**argv) {
     brokenParts[1]=brokenChild;broken["parts"]=brokenParts;
     assert(!AnimationExport::build(rigLoaded.project,broken,animation,err));
     assert(err.contains("Unknown parent"));
+    // Runtime-v1 component binding is independent of the older motionId.
+    // Saving and reloading a bound cuboid must preserve both fields.
+    Project authored=makeDemo();
+    authored.parts.front().motionId="legacy_gear";
+    authored.parts.front().rigComponentId="drum";
+    const auto authoredJson=ProjectIO::encode(authored);
+    LoadResult authoredLoaded;
+    assert(ProjectIO::decode(QJsonDocument(authoredJson).toJson(),authoredLoaded,err));
+    assert(authoredLoaded.project.parts.front().motionId=="legacy_gear");
+    assert(authoredLoaded.project.parts.front().rigComponentId=="drum");
+    Project plain=makeDemo();
+    const auto oldParts=ProjectIO::encode(plain).value("parts").toArray();
+    assert(!oldParts.front().toObject().contains("rigComponent"));
+
     // Optional v1 animation metadata must survive old Studio document edits,
     // including unknown schema fields that the native project does not own.
     QJsonObject oldDocument=ProjectIO::encode(makeDemo());
