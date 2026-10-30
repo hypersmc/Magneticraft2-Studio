@@ -33,6 +33,8 @@ jobs:
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-editor-ui-tests build/studio-editor-ux.png build/studio-uv-workspace.png
       - name: Six-face UV overview mouse test
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-uv-overview-tests build/studio-uv-six-faces.png
+      - name: Native animation rig OpenGL interaction test
+        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/studio-runtime-ui-tests build/studio-animation-rig.png
       - name: Preserve GUI preview
         uses: actions/upload-artifact@v4
         with:
@@ -46,3 +48,4 @@ jobs:
             build/studio-textured.png
             build/studio-uv-six-faces.png
             build/studio-uv-workspace.png
+            build/studio-animation-rig.png

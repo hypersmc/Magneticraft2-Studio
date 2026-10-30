@@ -108,6 +108,19 @@ if(STUDIO_BUILD_TESTS)
         add_executable(studio-uv-overview-tests tests/test_uv_overview.cpp
             src/ui/UvFaceOverview.hpp src/ui/UvFaceOverview.cpp)
         target_link_libraries(studio-uv-overview-tests PRIVATE studio_core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+
+        add_executable(studio-runtime-ui-tests tests/test_visual_runtime_ui.cpp
+            src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
+            src/ui/Viewport.hpp src/ui/Viewport.cpp
+            src/io/VisualContract.hpp src/io/VisualContract.cpp
+            src/io/RigTransforms.hpp src/io/RigTransforms.cpp
+            src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
+            src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
+            src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
+            src/io/TextureAssets.hpp src/io/TextureAssets.cpp)
+        target_link_libraries(studio-runtime-ui-tests PRIVATE studio_core
+            Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Test ZLIB::ZLIB)
+        target_compile_definitions(studio-runtime-ui-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
             src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
