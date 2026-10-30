@@ -135,6 +135,7 @@ Geometry buildGeometry(const Project& p,BuildOptions options) {
         for(std::size_t i=0;i<p.parts.size();i++) {
             const auto& part=p.parts[i];
             if(!part.visible || !validBounds(part.bounds))continue;
+            if(!part.rigComponentId.empty() && options.hideRigComponents.count(part.rigComponentId))continue;
             auto pts=corners(part.bounds);
             for(auto& v:pts)v=rotateEuler(v,part.pivot,part.rotationDegrees);
             drawCube(result,pts,{1.0f,1.0f,1.0f},

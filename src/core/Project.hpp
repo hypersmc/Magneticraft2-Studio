@@ -48,7 +48,8 @@ struct Part {
     std::string group = "Static";
     std::string material = "wood";
     std::string texture = "";
-    std::string motionId = "";
+    std::string motionId = ""; // Legacy animation bridge; never reused for runtime v1.
+    std::string rigComponentId = ""; // Optional visual-runtime-v1 component binding.
     std::array<FaceUV,6> faces{};
     Bounds bounds{{0,0,0},{1,1,1}};
     Vec3 pivot{0.5,0.5,0.5};
