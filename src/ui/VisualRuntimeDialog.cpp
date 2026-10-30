@@ -156,6 +156,7 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
         empty.parts.clear();empty.cells.clear();empty.textures.clear();
         BuildOptions opts;opts.showFormed=false;opts.showConstruction=false;opts.showGrid=true;
         rigViewport_->setScene(empty,opts);
+        rigViewport_->setRigVisible(true); // Standalone advanced inspector still renders animated parts.
         rigViewport_->resetCamera();
     }
     views->addWidget(rigViewport_);
