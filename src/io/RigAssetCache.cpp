@@ -16,8 +16,21 @@ QString RigAssetCache::cacheKey(const QString& source,const QString& machine,
         return info.absoluteFilePath()+":"+QString::number(info.size())+":"+
             QString::number(info.lastModified().toMSecsSinceEpoch());
     };
+    // Meshes depend on model IDs and belt geometry, not animation tracks,
+    // pivot values, or live shaft angles. Authoring a rotation must not reread
+    // or rebuild every baked model from the JAR.
+    QJsonObject models;
+    const auto components=scene.value("components").toObject();
+    for(auto it=components.begin();it!=components.end();++it){
+        const auto part=it.value().toObject();
+        models[it.key()]=QJsonObject{{"model",part.value("model")},
+                                    {"model_variants",part.value("model_variants")}};
+    }
+    const QJsonObject geometryKey{{"models",models},
+                                  {"belt_loops",scene.value("belt_loops")}};
     const auto hash=QCryptographicHash::hash(
-        QJsonDocument(scene).toJson(QJsonDocument::Compact),QCryptographicHash::Sha256).toHex();
+        QJsonDocument(geometryKey).toJson(QJsonDocument::Compact),
+        QCryptographicHash::Sha256).toHex();
     return fingerprint(source)+"|"+machine+"|"+QString::fromLatin1(hash)+"|"+
            (vanilla.isEmpty()?QString():fingerprint(vanilla));
 }
