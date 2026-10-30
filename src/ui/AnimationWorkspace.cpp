@@ -476,11 +476,12 @@ void AnimationWorkspace::rebuildAuthoredGeometry(){
             emit message("Cannot invert the rest transform for "+QString::fromStdString(name));
             continue;
         }
-        const QMatrix3x3 normalMatrix=inverse.normalMatrix();
+        // Java runtime joints use only rigid rotations/translations, so
+        // inverse.mapVector gives the correct normal transform (no scaling).
         for(auto& vertex:geometry.triangles){
             const auto position=inverse.map(QVector3D(vertex.x,vertex.y,vertex.z));
             vertex.x=position.x();vertex.y=position.y();vertex.z=position.z();
-            auto normal=normalMatrix*QVector3D(vertex.nx,vertex.ny,vertex.nz);
+            auto normal=inverse.mapVector(QVector3D(vertex.nx,vertex.ny,vertex.nz));
             if(normal.lengthSquared()>1e-6f)normal.normalize();
             vertex.nx=normal.x();vertex.ny=normal.y();vertex.nz=normal.z();
         }
