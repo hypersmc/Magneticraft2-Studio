@@ -27,43 +27,45 @@ In a multiblock project, open **File → Edit Machine Visual JSON (runtime v1)..
    edit the JSON text directly. Studio keeps unknown fields when saving.
 3. Validate the pair before saving. The source list shows only actual Java
    angle/integer inputs available to the selected machine.
-4. Use the shaft angle, Running, Overloaded, Worn and wear-stage controls to
-   inspect numeric sampled poses. These controls are **preview-only**. The
-   actual in-game shaft angle and states always come from Java/Gear V2.
-5. Save to the **existing** `.mcraftstudio.json` under a new optional
+4. Select an actual Java shaft channel and scrub its physical angle. Running,
+   Overloaded, Worn and wear-stage controls update both the sampled pose and
+   the OpenGL machine preview. Play/Pause runs an explicitly preview-only
+   signed degrees/second rate (never exported as mechanical speed).
+5. Choose **Load actual mod model assets...** and select the mod's local
+   `src/main/resources` (or another directory containing `assets/`). Studio
+   loads original cuboid model JSON and referenced PNGs without inventing
+   replacement meshes. Use **Add missing PNGs from Minecraft JAR...** for
+   vanilla textures not present in the mod's resources.
+6. Save to the **existing** `.mcraftstudio.json` under a new optional
    `visualRuntime` object. Older projects retain the old format and older
    `motions`/per-part animation metadata.
-6. Optionally export the manifest and scene as **two actual runtime JSON
+7. Optionally export the manifest and scene as **two actual runtime JSON
    resources**, under their correct namespaced paths.
+
+## Live native OpenGL preview (implemented)
+
+- Rig components use the existing Studio mesh shader, UV handling and texture cache. Each distinct model is built and uploaded once per asset import; animation updates GPU matrices only.
+- Hierarchy, pivots, static and driven rotations, translations and visibility follow the Java canonical SOUTH/controller-relative transform order.
+- Sifter crank, rigid connecting rod, follower and slider use the actual Java X/Z slider-crank equations, not independent sine approximations.
+- State-specific tracks, wear-stage model variants and independent real Java shaft inputs can be inspected and scrubbed.
+- Stamp Mill open belts use Java-style outer tangents and arc subdivisions. Physical UV repeats and signed cumulative shaft-angle surface movement are handled in the GPU shader, not stretched across the entire belt.
+- Models are loaded from an unpacked local asset root; parent-only models and texture-slot inheritance are resolved. Missing models are reported, missing PNGs are displayed with obvious magenta checkers.
 
 ## Important boundaries
 
-- **This is not a complete resource-pack ZIP export.** Component models, wear
-  variants and PNG dependencies must be supplied and checked separately.
-- The pose inspector evaluates component-local rotation/translation, wear
-  variants, state conditions and slider-crank values. It is **not** an
-  OpenGL viewport rig: full parent/mechanism transform composition, pulleys,
-  belt mesh + UV travel and facing transforms are not yet drawn.
-- The Java belt-loop renderer currently only opts in for the Bronze Stamp Mill;
-  Studio warns on other machine IDs rather than claiming they will appear.
-- The old `AnimationExport` rotation-only bridge remains available, unchanged.
-- Existing multiblock construction and formed-static model export are
-  intentionally separate, as the mod uses Rendering V2 split-cell meshes.
+- Export still writes only the two valid runtime JSON resources. It does not yet create a full pack-format-15 resource ZIP or generate missing baked Minecraft models and PNG dependencies.
+- The GPU scene preview uses canonical SOUTH orientation; accurate N/E/W machine-facing transforms and complete Rendering V2 static model assembly are still future tasks.
+- The editor offers direct JSON editing, not yet a full typed animation Outliner or mechanism gizmo interface.
+- The belt renderer is opted in only for the Bronze Stamp Mill in Java. Unsupported machines are warned, not silently granted belt rendering.
+- Vanilla Minecraft model features, lighting, transparency sorting, culling and in-game shader parity need visual comparisons. A local client JAR supplies PNGs but not baked model JSON inheritance here.
+- The old Studio animation exporter and existing .mcraftstudio.json project format remain supported. Preview degrees/second are not real Gear V2 RPM and are never exported.
 
-## Next milestones, incrementally
+## Next milestones
 
-1. Promote the scene/component metadata into context-sensitive editing tools
-   instead of requiring raw JSON. Integrate with Outliner.
-2. Compose and render the scene hierarchy into the actual Qt/OpenGL viewport
-   with the canonical SOUTH/controller reference frame and real baked model
-   dependencies.
-3. Evaluate and render typed belts using the precise Java `BeltPath` tangent,
-   arc, clearance, tessellation and UV equations, and validate texture files.
-4. Export **real** Minecraft model JSON, all block-atlas PNGs and a validated
-   pack-format 15 ZIP, preserving existing V2 static meshes.
-5. Test all six machines in a live Forge 1.20.1 client with F3+T and verify
-   Java fallback behavior and frame-rate performance.
-
+1. Add visual rig hierarchy, inputs, tracks and mechanism inspectors, with direct joint manipulation.
+2. Add whole-machine N/E/S/W preview, source model feature coverage and screenshot comparison with Forge 1.20.1.
+3. Build and validate a full resource-pack ZIP with real authored model JSON, correct atlas PNGs and direct belt textures.
+4. Perform live Minecraft F3+T testing, including machine fallback, all six machine scenes, and performance with multiple machines.
 ## Linux testing
 
 ```bash
@@ -72,6 +74,8 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-The `studio-visual-contract-tests` target checks manifest/scene validation,
-physical sources, cycles, deterministic poses and non-destructive JSON
-export/re-import against all six mod fixtures.
+The `studio-visual-contract-tests` and `studio-rig-preview-tests` check six actual
+Java scene fixtures, slider-crank rod closure, inherited parent transforms,
+wear variants, belt UV tiling, and unwrapped shaft-angle travel. Linux CI also
+runs a native Qt/OpenGL window test that imports real Grinder model geometry.
+These are not substitutes for live Forge 1.20.1 in-game visual verification.
