@@ -1,5 +1,6 @@
 #include "RigAssetCache.hpp"
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <algorithm>

@@ -34,7 +34,7 @@ QDoubleSpinBox* spin(QWidget* parent,double low,double high,double step,int deci
     s->setKeyboardTracking(false);
     return s;
 }
-QJsonArray point3(const QDoubleSpinBox* const (&v)[3]){
+QJsonArray point3(QDoubleSpinBox* const v[3]){
     return {v[0]->value(),v[1]->value(),v[2]->value()};
 }
 QString selectedTrack(const QComboBox* box){return box->currentData().toString();}
@@ -251,6 +251,7 @@ void AnimationWorkspace::setProject(const Project& p,const QJsonObject& saved){
             status_->setText(error);
     }
     QSettings settings;
+    acceptedMachine_=machine;
     const QString projectSource=saved.value("assetSource").toString();
     sourcePath_=QFileInfo::exists(projectSource)?projectSource:
         settings.value("animation/mod-jar",
@@ -487,11 +488,7 @@ void AnimationWorkspace::changeMachine(const QString& machine){
             QMessageBox::Discard|QMessageBox::Cancel,QMessageBox::Cancel);
         if(answer!=QMessageBox::Discard){
             QSignalBlocker blocker(machine_);
-            const QString prior=metadata().value("machine").toString();
-            Q_UNUSED(prior);
-            machine_->setCurrentText(manifest_.value("_studio_machine").toString(
-                // Retain the prior Java source when the user cancels.
-                detectMachine(QString())));
+            machine_->setCurrentText(acceptedMachine_);
             return;
         }
     }
@@ -499,7 +496,8 @@ void AnimationWorkspace::changeMachine(const QString& machine){
     if(!VisualTemplates::bundled(machine,nextManifest,nextScene,error)){
         emit message(error);return;
     }
-    manifest_=nextManifest;scene_=nextScene;hasSavedRuntime_=true;
+    manifest_=nextManifest;scene_=nextScene;acceptedMachine_=machine;
+    hasSavedRuntime_=true;
     assets_.reset();previewAngles_.clear();
     refreshComponents();refreshInputs();
     refreshAssets();

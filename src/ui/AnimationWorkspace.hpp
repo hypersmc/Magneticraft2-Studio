@@ -85,6 +85,7 @@ private:
     bool active_=false;
     bool settingUi_=false;
     bool hasSavedRuntime_=false;
+    QString acceptedMachine_;
     ProjectKind kind_=ProjectKind::Multiblock;
 };
 } // namespace studio
