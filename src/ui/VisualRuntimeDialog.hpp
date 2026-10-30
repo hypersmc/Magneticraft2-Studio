@@ -36,6 +36,8 @@ private:
     void loadExtraTextures();
     void syncAngleSource();
     void advancePlayback();
+    bool loadBundledMachine(const QString& machine,bool confirmChanges);
+    void updateSourcesLabel();
     bool parsePair(QJsonObject& manifest,QJsonObject& scene,QString& error);
     void refreshSources();
     QComboBox* machine_=nullptr;
@@ -58,6 +60,9 @@ private:
     QCheckBox* overloaded_=nullptr;
     QCheckBox* worn_=nullptr;
     QLabel* status_=nullptr;
+    QLabel* sourceList_=nullptr;
+    QString activeMachine_;
+    QString manifestBaseline_, sceneBaseline_;
     bool valid_=false;
 };
 } // namespace studio

@@ -1,5 +1,6 @@
 #include "VisualRuntimeDialog.hpp"
 #include "io/VisualContract.hpp"
+#include "io/VisualTemplates.hpp"
 #include "io/RigTransforms.hpp"
 #include "ui/Viewport.hpp"
 
@@ -34,28 +35,6 @@ namespace {
 QString pretty(const QJsonObject& object){
     return QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Indented));
 }
-QJsonObject starterManifest(){
-    return {{"format","magneticraft2:machine_visual"},{"format_version",1},
-        {"animation","magneticraft2:studio/primitive_grinder_custom"},
-        {"angle_channels",QJsonObject{{"mechanical_input","mechanical_input"}}},
-        {"integer_channels",QJsonObject{}}};
-}
-QJsonObject starterScene(){
-    return {{"format","magneticraft2:visual_animation"},{"format_version",1},
-      {"coordinate_system",QJsonObject{{"units","blocks"},{"origin","controller"},{"reference_facing","south"}}},
-      {"components",QJsonObject{
-         {"input_axle",QJsonObject{{"model","magneticraft2:multiblock/primitive_grinder_axle"},
-            {"model_offset",QJsonArray{0,0,0}},{"pivot",QJsonArray{0,0.5,0.5}}}},
-         {"grinding_rotor",QJsonObject{{"model","magneticraft2:multiblock/primitive_grinder_rotor"},
-            {"model_offset",QJsonArray{0,0,0}},{"pivot",QJsonArray{0.5,0,0.5}}}}}},
-      {"inputs",QJsonObject{{"drive_angle",QJsonObject{{"source","mechanical.visual_angle_degrees"},
-                           {"module","mechanical_input"}}}}},
-      {"animations",QJsonObject{{"gear_drive",QJsonObject{
-          {"type","driven"},{"tracks",QJsonArray{
-            QJsonObject{{"target","input_axle"},{"property","rotation"},{"axis","x"},{"input","drive_angle"},{"scale",1}},
-            QJsonObject{{"target","grinding_rotor"},{"property","rotation"},{"axis","y"},{"input","drive_angle"},{"scale",-1}}
-          }}}}}}};
-}
 bool loadObject(QWidget* parent,QPlainTextEdit* destination,const QString& caption){
     const QString path=QFileDialog::getOpenFileName(parent,caption,{},"JSON (*.json)");
     if(path.isEmpty())return false;
@@ -71,25 +50,34 @@ bool loadObject(QWidget* parent,QPlainTextEdit* destination,const QString& capti
 VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* parent):QDialog(parent){
     setWindowTitle("MGC2 Studio — JSON Machine Visual Editor (runtime v1)");
     resize(1280,850);
+    const QString savedMachine=existing.value("machine").toString("primitive_grinder");
+    const bool hasSavedDefinition=existing.value("manifest").isObject() ||
+                                  existing.value("scene").isObject();
+    QJsonObject initialManifest=existing.value("manifest").toObject();
+    QJsonObject initialScene=existing.value("scene").toObject();
+    QString templateError;
+    if(!hasSavedDefinition &&
+       !VisualTemplates::bundled(savedMachine,initialManifest,initialScene,templateError))
+        qWarning("Studio: %s",qPrintable(templateError));
     auto* layout=new QVBoxLayout(this);
     auto* top=new QHBoxLayout;
     top->addWidget(new QLabel("Java machine",this));
     machine_=new QComboBox(this);machine_->setObjectName("VisualMachine");
-    machine_->addItems({"bronze_mechanical_lathe","mechanical_sifter","primitive_grinder",
-       "mechanical_ore_washer","bronze_stamp_mill","rotary_ore_classifier"});
-    machine_->setCurrentText(existing.value("machine").toString("primitive_grinder"));
+    machine_->addItems(VisualTemplates::machines());
+    machine_->setCurrentText(savedMachine);
+    activeMachine_=machine_->currentText();
     top->addWidget(machine_);
-    auto* sources=new QLabel(this);
-    sources->setObjectName("VisualSources");sources->setWordWrap(true);
-    top->addWidget(sources,1);
+    sourceList_=new QLabel(this);
+    sourceList_->setObjectName("VisualSources");sourceList_->setWordWrap(true);
+    top->addWidget(sourceList_,1);
     layout->addLayout(top);
     auto* editors=new QSplitter(Qt::Horizontal,this);
     auto* manifestBox=new QWidget(editors);auto* ml=new QVBoxLayout(manifestBox);
     ml->addWidget(new QLabel("machine_visuals/<machine>.json — physical input aliases"));
     manifest_=new QPlainTextEdit(manifestBox);manifest_->setObjectName("VisualManifestJSON");
     manifest_->setTabStopDistance(22);
-    manifest_->setPlainText(pretty(existing.value("manifest").isObject()
-      ?existing.value("manifest").toObject():starterManifest()));
+    manifest_->setPlainText(pretty(initialManifest));
+    manifestBaseline_=manifest_->toPlainText();
     ml->addWidget(manifest_,1);
     auto* importManifestButton=new QPushButton("Import machine manifest JSON...",manifestBox);
     ml->addWidget(importManifestButton);
@@ -98,8 +86,8 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     sl->addWidget(new QLabel("animations/<scene-id>.json — complete scene graph"));
     scene_=new QPlainTextEdit(sceneBox);scene_->setObjectName("VisualSceneJSON");
     scene_->setTabStopDistance(22);
-    scene_->setPlainText(pretty(existing.value("scene").isObject()
-      ?existing.value("scene").toObject():starterScene()));
+    scene_->setPlainText(pretty(initialScene));
+    sceneBaseline_=scene_->toPlainText();
     sl->addWidget(scene_,1);
     auto* importSceneButton=new QPushButton("Import animation scene JSON...",sceneBox);
     sl->addWidget(importSceneButton);
@@ -187,18 +175,24 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     connect(playbackTimer_,&QTimer::timeout,this,&VisualRuntimeDialog::advancePlayback);
     status_=new QLabel(this);status_->setWordWrap(true);layout->addWidget(status_);
     auto* buttons=new QHBoxLayout;
+    auto* resetButton=new QPushButton("Load bundled machine example",this);
+    resetButton->setObjectName("VisualLoadExample");
+    resetButton->setToolTip("Restore the exact v1 runtime scene and manifest shipped in Studio for the selected machine");
     auto* validateButton=new QPushButton("Validate against Java v1",this);
     auto* exportButton=new QPushButton("Export two JSON resources...",this);
     auto* closeButton=new QPushButton("Close",this);
     auto* acceptButton=new QPushButton("Save into Studio project",this);
     acceptButton->setObjectName("VisualSaveProject");
-    buttons->addWidget(validateButton);buttons->addWidget(exportButton);
+    buttons->addWidget(resetButton);buttons->addWidget(validateButton);buttons->addWidget(exportButton);
     buttons->addStretch();buttons->addWidget(closeButton);buttons->addWidget(acceptButton);
     layout->addLayout(buttons);
 
     connect(importManifestButton,&QPushButton::clicked,this,&VisualRuntimeDialog::importManifest);
     connect(importSceneButton,&QPushButton::clicked,this,&VisualRuntimeDialog::importScene);
     connect(validateButton,&QPushButton::clicked,this,&VisualRuntimeDialog::validate);
+    connect(resetButton,&QPushButton::clicked,this,[this](){
+        loadBundledMachine(machine_->currentText(),true);
+    });
     connect(exportButton,&QPushButton::clicked,this,&VisualRuntimeDialog::exportFiles);
     connect(acceptButton,&QPushButton::clicked,this,[this](){
         QJsonObject m,s;QString error;QStringList warnings;
@@ -209,12 +203,12 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     auto changed=[this](){valid_=false;sample();};
     connect(manifest_,&QPlainTextEdit::textChanged,this,changed);
     connect(scene_,&QPlainTextEdit::textChanged,this,changed);
-    connect(machine_,&QComboBox::currentTextChanged,this,[this,sources](const QString& machine){
-        syncAngleSource();
-        sources->setText("Java angles: "+VisualContract::availableAngles(machine).join(", ")+
-          "    |    Java integers: "+(VisualContract::availableIntegers(machine).isEmpty()
-             ?QString("none"):VisualContract::availableIntegers(machine).join(", ")));
-        sample();
+    connect(machine_,&QComboBox::currentTextChanged,this,[this](const QString& machine){
+        if(!loadBundledMachine(machine,true)){
+            QSignalBlocker blocker(machine_);
+            machine_->setCurrentText(activeMachine_);
+            return;
+        }
     });
     connect(angleSource_,&QComboBox::currentTextChanged,this,[this](const QString& source){
         QSignalBlocker block(shaftAngle_);
@@ -227,9 +221,7 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     connect(wearStage_,QOverload<int>::of(&QSpinBox::valueChanged),this,[this](int){sample();});
     for(auto* c:{running_,overloaded_,worn_})
         connect(c,&QCheckBox::toggled,this,[this](bool){sample();});
-    sources->setText("Java angles: "+VisualContract::availableAngles(machine_->currentText()).join(", ")+
-      "    |    Java integers: "+(VisualContract::availableIntegers(machine_->currentText()).isEmpty()
-          ?QString("none"):VisualContract::availableIntegers(machine_->currentText()).join(", ")));
+    updateSourcesLabel();
     syncAngleSource();
     validate();
 }
@@ -277,6 +269,49 @@ void VisualRuntimeDialog::sample(){
     rigViewport_->setRigPose(transforms);
 }
 
+void VisualRuntimeDialog::updateSourcesLabel(){
+    const QString id=machine_->currentText();
+    const auto angles=VisualContract::availableAngles(id),integers=VisualContract::availableIntegers(id);
+    sourceList_->setText("Java angles: "+angles.join(", ")+
+        "    |    Java integers: "+(integers.isEmpty()?QString("none"):integers.join(", ")));
+}
+bool VisualRuntimeDialog::loadBundledMachine(const QString& machine,bool confirmChanges){
+    const bool modified=manifest_->toPlainText()!=manifestBaseline_ ||
+                        scene_->toPlainText()!=sceneBaseline_;
+    if(modified&&confirmChanges){
+        const auto reply=QMessageBox::warning(this,"Replace edited machine definitions?",
+            "Changing machine loads its own Java manifest and animation scene. "
+            "Unsaved JSON edits in this dialog will be discarded.\n\n"
+            "Your saved Studio project remains unchanged until you press Save.",
+            QMessageBox::Discard|QMessageBox::Cancel,QMessageBox::Cancel);
+        if(reply!=QMessageBox::Discard)return false;
+    }
+    QJsonObject m,s;QString error;
+    if(!VisualTemplates::bundled(machine,m,s,error)){
+        QMessageBox::warning(this,"Bundled machine missing",error);
+        return false;
+    }
+    {
+        QSignalBlocker blockM(manifest_),blockS(scene_);
+        manifest_->setPlainText(pretty(m));
+        scene_->setPlainText(pretty(s));
+    }
+    manifestBaseline_=manifest_->toPlainText();
+    sceneBaseline_=scene_->toPlainText();
+    activeMachine_=machine;
+    if(playbackTimer_->isActive()){
+        playbackTimer_->stop();
+        playPause_->setText("Play");
+    }
+    rigAssets_={};rigAssetsLoaded_=false;
+    rigViewport_->setRigModels({},{});
+    rigViewport_->setRigPose(RigPose{});
+    rigAssetStatus_->setText("Bundled Java v1 scene selected. Load models from a mod JAR or an unpacked assets folder.");
+    updateSourcesLabel();
+    syncAngleSource();
+    validate();
+    return true;
+}
 void VisualRuntimeDialog::syncAngleSource(){
     const QString previous=angleSource_->currentText();
     const auto sources=VisualContract::availableAngles(machine_->currentText());

@@ -1,4 +1,5 @@
 #include "io/VisualContract.hpp"
+#include "io/VisualTemplates.hpp"
 #include <QCoreApplication>
 #include <QFile>
 #include <QDir>
@@ -27,6 +28,9 @@ int main(int argc,char** argv){
            std::cerr<<machine.toStdString()<<": "<<error.toStdString()<<"\n";return 9;
         }
         QTemporaryDir temp;assert(temp.isValid());
+        QJsonObject bundledManifest,bundledScene;
+        assert(VisualTemplates::bundled(machine,bundledManifest,bundledScene,error));
+        assert(bundledManifest==manifest && bundledScene==scene);
         assert(VisualContract::exportPair(temp.path(),machine,manifest,scene,error,&warnings));
         const QString sceneId=manifest.value("animation").toString();
         const QString path=temp.path()+"/assets/"+sceneId.section(':',0,0)+
