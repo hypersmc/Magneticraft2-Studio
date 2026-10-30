@@ -81,9 +81,7 @@ if(STUDIO_BUILD_TESTS)
         add_test(NAME studio-import-tests COMMAND studio-import-tests)
 
         add_executable(studio-visual-contract-tests tests/test_visual_contract.cpp
-            src/io/VisualContract.hpp src/io/VisualContract.cpp
-            src/io/RigTransforms.hpp src/io/RigTransforms.cpp
-            src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp)
+            src/io/VisualContract.hpp src/io/VisualContract.cpp)
         target_link_libraries(studio-visual-contract-tests PRIVATE studio_core Qt6::Core Qt6::Gui)
         target_compile_definitions(studio-visual-contract-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_test(NAME studio-visual-contract-tests COMMAND studio-visual-contract-tests)
@@ -112,6 +110,8 @@ if(STUDIO_BUILD_TESTS)
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
             src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
             src/io/VisualContract.hpp src/io/VisualContract.cpp
+            src/io/RigTransforms.hpp src/io/RigTransforms.cpp
+            src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
             src/ui/StartPage.hpp src/ui/StartPage.cpp
             src/ui/Viewport.hpp src/ui/Viewport.cpp
             src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp
