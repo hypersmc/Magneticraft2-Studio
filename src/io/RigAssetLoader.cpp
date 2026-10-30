@@ -1,6 +1,7 @@
 #include "RigAssetLoader.hpp"
 #include "io/BlockModelImport.hpp"
 #include "io/RigBeltMesh.hpp"
+#include "io/VisualContract.hpp"
 
 #include <QDir>
 #include <QFile>
@@ -89,6 +90,32 @@ QStringList modelsIn(const QJsonObject& scene){
     }
     auto ids=required.values();ids.sort();return ids;
 }
+}
+bool RigAssetLoader::loadMachineDefinition(const QString& sourcePath,
+                                          const QString& machine,
+                                          QJsonObject& manifest,QJsonObject& scene,
+                                          QString& error){
+    AssetSource asset;
+    if(!asset.open(sourcePath,error))return false;
+    const QString manifestPath="assets/magneticraft2/machine_visuals/"+machine+".json";
+    QByteArray manifestBytes;
+    if(!asset.read(manifestPath,manifestBytes,error,2*1024*1024)){
+        if(error.isEmpty())error="The selected mod JAR has no runtime-v1 machine manifest: "+manifestPath;
+        return false;
+    }
+    QJsonObject binding;
+    if(!VisualContract::parseObject(manifestBytes,binding,error))return false;
+    if(!VisualContract::validateManifest(binding,machine,error))return false;
+    const QString sceneId=binding.value("animation").toString();
+    const QString scenePath="assets/"+sceneId.section(':',0,0)+
+                            "/animations/"+sceneId.section(':',1)+".json";
+    QByteArray sceneBytes;
+    if(!asset.read(scenePath,sceneBytes,error,2*1024*1024)){
+        if(error.isEmpty())error="The selected mod JAR has no animation scene: "+scenePath;
+        return false;
+    }
+    return VisualContract::importPair(machine,manifestBytes,sceneBytes,
+                                      manifest,scene,error);
 }
 bool RigAssetLoader::load(const QString& selected,const QJsonObject& scene,RigAssets& output,
                           const QString& javaMachine){
