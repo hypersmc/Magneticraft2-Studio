@@ -36,6 +36,7 @@ struct CellHash {
 // Coordinates are in texture tiles: 1.0 = the full imported PNG. When automatic,
 // each world block maps to one texture tile (no accidental stretching).
 struct FaceUV {
+    bool enabled=true; // Java 'faces' may intentionally omit a side; legacy projects default visible.
     std::string texture; // Empty means inherit the cuboid texture.
     std::array<double,4> uv{0.0,0.0,1.0,1.0};
     bool automatic=true;

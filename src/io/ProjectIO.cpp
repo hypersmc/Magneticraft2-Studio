@@ -49,6 +49,7 @@ static QJsonObject partObject(const Part& part,QJsonObject original) {
     for(int i=0;i<6;i++) {
         const auto& f=part.faces[std::size_t(i)];
         QJsonObject uv{{"auto",f.automatic},{"rotate",f.quarterTurns}};
+        if(!f.enabled)uv["enabled"]=false;
         if(!f.texture.empty())uv["texture"]=q(f.texture);
         QJsonArray rect;for(double n:f.uv)rect.append(n);
         uv["uv"]=rect;
@@ -76,6 +77,7 @@ static Part readPart(const QJsonObject& obj) {
         const QJsonObject f=faces.value(faceNames[i]).toObject();
         if(f.isEmpty())continue;
         auto& target=part.faces[std::size_t(i)];
+        target.enabled=f.value("enabled").toBool(true);
         target.texture=s(f.value("texture"));
         target.automatic=f.value("auto").toBool(true);
         target.quarterTurns=std::clamp(f.value("rotate").toInt(0),-1000,1000);

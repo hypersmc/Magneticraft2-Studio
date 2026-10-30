@@ -96,7 +96,7 @@ BlockModelImportResult importBlockModel(const QByteArray& json,const Project& pr
         QString defaultTexture;
         for(int face=0;face<6;face++){
             const QJsonObject data=faces.value(names[face]).toObject();
-            if(data.isEmpty())continue;
+            if(data.isEmpty()){part.faces[face].enabled=false;continue;}
             const QString id=textureOf(data.value("texture").toString(),textures);
             if(!id.isEmpty()){
                 part.faces[face].texture=id.toStdString();

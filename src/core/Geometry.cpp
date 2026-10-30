@@ -137,7 +137,9 @@ Geometry buildGeometry(const Project& p,BuildOptions options) {
             if(!part.visible || !validBounds(part.bounds))continue;
             auto pts=corners(part.bounds);
             for(auto& v:pts)v=rotateEuler(v,part.pivot,part.rotationDegrees);
-            drawCube(result,pts,{1.0f,1.0f,1.0f},{true,true,true,true,true,true},&part);
+            drawCube(result,pts,{1.0f,1.0f,1.0f},
+                {part.faces[0].enabled,part.faces[1].enabled,part.faces[2].enabled,
+                 part.faces[3].enabled,part.faces[4].enabled,part.faces[5].enabled},&part);
             if(int(i)==options.selectedPart) {
                 drawEdges(result,pts,{1.0f,0.79f,0.27f});
                 const Vec3 pivot=part.pivot;

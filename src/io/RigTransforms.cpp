@@ -71,11 +71,12 @@ bool RigTransforms::evaluate(const QString& machine,const QJsonObject& manifest,
           sampledParts=sampled.value("components").toObject(),
           mechanisms=scene.value("mechanisms").toObject(),
           mechanismSamples=sampled.value("mechanisms").toObject();
-    std::map<QString,QPair<QJsonObject,QString>> roles;
+    struct Role {QString mechanismId, name;};
+    std::map<QString,Role> roles;
     for(auto it=mechanisms.begin();it!=mechanisms.end();++it){
         const auto mapping=it.value().toObject().value("parts").toObject();
         for(const auto& role:{"crank","rod","follower","slider"}){
-            roles[mapping.value(role).toString()]={it.value().toObject(),QString::fromLatin1(role)};
+            roles[mapping.value(role).toString()]={it.key(),QString::fromLatin1(role)};
             // Unique roles are already enforced by the validator.
         }
     }
@@ -90,13 +91,10 @@ bool RigTransforms::evaluate(const QString& machine,const QJsonObject& manifest,
         QMatrix4x4 world=parent;
         const auto role=roles.find(id);
         if(role!=roles.end()){
-            const QString mechanismId=[&](){
-                for(auto it=mechanisms.begin();it!=mechanisms.end();++it)
-                    if(it.value().toObject()==role->second.first)return it.key();
-                return QString();
-            }();
-            world*=mechanismTransform(mechanismId,role->second.second,role->second.first,
-                mechanismSamples.value(mechanismId).toObject());
+            const auto& binding=role->second;
+            world*=mechanismTransform(binding.mechanismId,binding.name,
+                mechanisms.value(binding.mechanismId).toObject(),
+                mechanismSamples.value(binding.mechanismId).toObject());
         }
         translate(world,definition.value("model_offset"));
         const auto trans=evaluated.value("translation").toObject();
@@ -122,7 +120,8 @@ bool RigTransforms::evaluate(const QString& machine,const QJsonObject& manifest,
     };
     QMatrix4x4 identity;identity.setToIdentity();
     for(auto it=definitions.begin();it!=definitions.end();++it)
-        if(!it.value().toObject().contains("parent"))
+        if(it.value().toObject().value("parent").isNull() ||
+           !it.value().toObject().contains("parent"))
             if(!subtree(it.key(),identity,true))return false;
     if(seen.size()!=definitions.size()){
         error="Rig contains unresolved components";return false;
