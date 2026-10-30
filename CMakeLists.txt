@@ -114,6 +114,7 @@ if(STUDIO_BUILD_TESTS)
             src/io/VisualContract.hpp src/io/VisualContract.cpp
             src/io/RigTransforms.hpp src/io/RigTransforms.cpp
             src/io/RigAssetLoader.hpp src/io/RigAssetLoader.cpp
+            src/io/RigBeltMesh.hpp src/io/RigBeltMesh.cpp
             src/ui/StartPage.hpp src/ui/StartPage.cpp
             src/ui/Viewport.hpp src/ui/Viewport.cpp
             src/ui/LayerCanvas.hpp src/ui/LayerCanvas.cpp

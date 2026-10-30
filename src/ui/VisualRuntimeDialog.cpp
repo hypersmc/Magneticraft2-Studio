@@ -43,7 +43,7 @@ QJsonObject starterScene(){
     return {{"format","magneticraft2:visual_animation"},{"format_version",1},
       {"coordinate_system",QJsonObject{{"units","blocks"},{"origin","controller"},{"reference_facing","south"}}},
       {"components",QJsonObject{
-         {"input_axle",QJsonObject{{"model","magneticraft2:multiblock/primitive_grinder_input_axle"},
+         {"input_axle",QJsonObject{{"model","magneticraft2:multiblock/primitive_grinder_axle"},
             {"model_offset",QJsonArray{0,0,0}},{"pivot",QJsonArray{0,0.5,0.5}}}},
          {"grinding_rotor",QJsonObject{{"model","magneticraft2:multiblock/primitive_grinder_rotor"},
             {"model_offset",QJsonArray{0,0,0}},{"pivot",QJsonArray{0.5,0,0.5}}}}}},
