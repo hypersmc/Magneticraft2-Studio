@@ -1156,6 +1156,7 @@ void MainWindow::switchWorkspace(){
     if(animationPanel_)animationPanel_->activate(animated);
     syncWorkspaceChrome();
     refreshScene();
+    if(tree_)refreshPartTree();
 }
 void MainWindow::syncWorkspaceChrome(){
     const bool isModel=mode_&&mode_->currentIndex()==1;

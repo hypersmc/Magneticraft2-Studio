@@ -253,9 +253,11 @@ void AnimationWorkspace::setProject(const Project& p,const QJsonObject& saved){
     QSettings settings;
     acceptedMachine_=machine;
     const QString projectSource=saved.value("assetSource").toString();
+    const QString globalJar=settings.value("animation/mod-jar").toString();
+    const QString globalFolder=settings.value("animation/asset-root").toString();
     sourcePath_=QFileInfo::exists(projectSource)?projectSource:
-        settings.value("animation/mod-jar",
-            settings.value("animation/asset-root")).toString();
+        QFileInfo::exists(globalJar)?globalJar:
+        QFileInfo::exists(globalFolder)?globalFolder:QString();
     vanillaPath_=settings.value("animation/minecraft-jar").toString();
     setEnabled(kind_==ProjectKind::Multiblock);
     refreshComponents();refreshInputs();
