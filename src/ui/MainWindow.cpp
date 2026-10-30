@@ -763,7 +763,7 @@ void MainWindow::createMenus(){
             "<b>Magneticraft2 Studio — Linux Editor v0.5</b><br><br>"
             "Native Qt 6/C++ modeling with OpenGL 3.3 and editable Java block model imports.<br>"
             "Construction and model workspaces share a saved Studio document.<br><br>"
-            "Still in development: animation rigging, texture painting, parent-model resolution and Forge formed rendering.");
+            "Animation workspace includes Java-v1 driven rotations and physical preview; complete Forge-renderer parity and full pack export are still WIP.");
     });
 
     auto* header=addToolBar("Studio header");
@@ -1462,7 +1462,9 @@ void MainWindow::openExample(const QString& key){
         project_.notes="This example contains the real Magneticraft2 Sifter construction layout. "
                        "Its formed model has not been imported yet.";
         loadedJson_=example.original;filename_.clear();dirty_=true;hasDocument_=true;
-        undo_.clear();redo_.clear();selected_=-1;layer_=0;uvWorkspace_=false;
+        undo_.clear();redo_.clear();selected_=-1;layer_=0;
+        uvWorkspace_=false;animateWorkspace_=false;
+        animationPanel_->setProject(project_,loadedJson_.value("visualRuntime").toObject());
         mode_->setCurrentIndex(0);activateEditor();refreshAll();viewport_->resetCamera();return;
     }
     if(key=="workshop"||key=="casing"){
@@ -1471,8 +1473,9 @@ void MainWindow::openExample(const QString& key){
         project_.notes=key=="workshop" ? "Simple tutorial machine, not the actual Ore Washer."
                                            : "Java block example in the 3x3x3 model envelope.";
         loadedJson_={};filename_.clear();dirty_=true;hasDocument_=true;
-        undo_.clear();redo_.clear();layer_=0;uvWorkspace_=false;
+        undo_.clear();redo_.clear();layer_=0;uvWorkspace_=false;animateWorkspace_=false;
         selected_=key=="casing"?0:-1;
+        animationPanel_->setProject(project_,loadedJson_.value("visualRuntime").toObject());
         mode_->setCurrentIndex(1);activateEditor();refreshAll();viewport_->resetCamera();return;
     }
 }
@@ -1482,7 +1485,9 @@ void MainWindow::createJavaBlock(){
     uvImageKey_.clear();viewport_->invalidateTextures();
     project_=makeJavaBlockProject("New Java Block");
     dirty_=false;hasDocument_=true;filename_.clear();loadedJson_={};
-    selected_=0;undo_.clear();redo_.clear();layer_=0;uvWorkspace_=false;
+    selected_=0;undo_.clear();redo_.clear();layer_=0;
+    uvWorkspace_=false;animateWorkspace_=false;
+    animationPanel_->setProject(project_,{});
     mode_->setCurrentIndex(1);
     activateEditor();refreshAll();viewport_->resetCamera();
 }
@@ -1493,7 +1498,9 @@ void MainWindow::createMultiblock(){
     uvImageKey_.clear();viewport_->invalidateTextures();
     project_=makeProject(name.toStdString(),dims);
     dirty_=false;hasDocument_=true;filename_.clear();loadedJson_={};selected_=-1;
-    undo_.clear();redo_.clear();layer_=0;uvWorkspace_=false;
+    undo_.clear();redo_.clear();layer_=0;
+    uvWorkspace_=false;animateWorkspace_=false;
+    animationPanel_->setProject(project_,{});
     mode_->setCurrentIndex(0);
     activateEditor();refreshAll();viewport_->resetCamera();
 }
@@ -1577,7 +1584,9 @@ bool MainWindow::openOreWasherReference(){
     project_=std::move(example);loadedJson_=structureResult.original;
     hasDocument_=true;
     filename_.clear();dirty_=true;undo_.clear();redo_.clear();selected_=-1;layer_=0;
-    uvWorkspace_=false;mode_->setCurrentIndex(1);
+    uvWorkspace_=false;animateWorkspace_=false;
+    animationPanel_->setProject(project_,loadedJson_.value("visualRuntime").toObject());
+    mode_->setCurrentIndex(1);
     activateEditor();refreshAll();viewport_->resetCamera();
     qInfo("Studio: Ore Washer model imported with %lld editable cuboids",static_cast<long long>(result.parts.size()));
     const auto missing=missingTextureIds(project_);
@@ -1599,8 +1608,11 @@ void MainWindow::openPath(const QString& path){
     uvImageKey_.clear();viewport_->invalidateTextures();
     project_=std::move(result.project);loadedJson_=std::move(result.original);
     hasDocument_=true;
+    uvWorkspace_=false;animateWorkspace_=false;
+    selected_=-1;layer_=0;filename_=result.fromLegacy ? QString() : path;
+    dirty_=false;undo_.clear();redo_.clear();
+    animationPanel_->setProject(project_,loadedJson_.value("visualRuntime").toObject());
     mode_->setCurrentIndex(project_.parts.empty()?0:1);
-    selected_=-1;layer_=0;filename_=result.fromLegacy ? QString() : path;dirty_=false;undo_.clear();redo_.clear();
     activateEditor();refreshAll();viewport_->resetCamera();
     if(!result.fromLegacy)rememberRecentProject(path);
 }

@@ -38,6 +38,8 @@ if(NOT STUDIO_HEADLESS_ONLY)
         src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
         src/io/TextureAssets.hpp src/io/TextureAssets.cpp
         src/ui/MainWindow.hpp src/ui/MainWindow.cpp
+        src/ui/AnimationWorkspace.hpp src/ui/AnimationWorkspace.cpp
+        src/io/RigAssetCache.hpp src/io/RigAssetCache.cpp
         src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
         src/ui/StartPage.hpp src/ui/StartPage.cpp
         src/ui/Viewport.hpp src/ui/Viewport.cpp
@@ -132,6 +134,8 @@ if(STUDIO_BUILD_TESTS)
         target_compile_definitions(studio-runtime-ui-tests PRIVATE STUDIO_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         add_executable(studio-editor-ui-tests tests/test_editor_ui.cpp
             src/ui/MainWindow.hpp src/ui/MainWindow.cpp
+            src/ui/AnimationWorkspace.hpp src/ui/AnimationWorkspace.cpp
+            src/io/RigAssetCache.hpp src/io/RigAssetCache.cpp
             src/ui/VisualRuntimeDialog.hpp src/ui/VisualRuntimeDialog.cpp
             src/io/VisualTemplates.hpp src/io/VisualTemplates.cpp
             resources/visual-runtime.qrc
