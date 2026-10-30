@@ -4,8 +4,30 @@
 
 #include <QString>
 #include <QStringList>
+#include <QByteArray>
+#include <memory>
 
 namespace studio {
+
+// Local, read-only Minecraft asset source (resource root or ZIP/JAR).
+// Opens an archive just once; model JSON and PNG imports share its validated
+// central directory, decompression limits and CRC checks. No file extraction
+// to arbitrary paths, network access, or dependence on mod source checkouts.
+class AssetSource final {
+public:
+    AssetSource();
+    ~AssetSource();
+    AssetSource(const AssetSource&)=delete;
+    AssetSource& operator=(const AssetSource&)=delete;
+    bool open(const QString& sourcePath,QString& error);
+    // Missing entry returns false with an empty error.
+    // Invalid or unsafe entry returns false with a diagnostic.
+    bool read(const QString& resourcePath,QByteArray& contents,
+              QString& error,qsizetype maxBytes=8*1024*1024) const;
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 struct TextureAssetReport {
     QStringList imported;
