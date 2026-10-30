@@ -4,6 +4,9 @@
 #include <QApplication>
 #include <QDoubleSpinBox>
 #include <QComboBox>
+#include <QMessageBox>
+#include <QTimer>
+#include <QTextCursor>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -85,6 +88,25 @@ int main(int argc,char** argv){
         }
     }
     machinePicker->setCurrentText(machine);
+    // Changes to user-authored JSON must not be lost because someone picked
+    // another machine. The default decision is Cancel and the edited text
+    // and machine choice must both stay intact.
+    auto* manifestEditor=dialog.findChild<QPlainTextEdit*>("VisualManifestJSON");
+    if(!manifestEditor)return 14;
+    manifestEditor->moveCursor(QTextCursor::End);
+    manifestEditor->insertPlainText("\n ");
+    const QString customized=manifestEditor->toPlainText();
+    QTimer::singleShot(0,[&](){
+        auto* modal=qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        if(modal)modal->reject();
+    });
+    machinePicker->setCurrentText("mechanical_sifter");
+    if(machinePicker->currentText()!=machine ||
+       manifestEditor->toPlainText()!=customized){
+        std::cerr<<"Custom JSON was lost when a machine change was cancelled\n";return 15;
+    }
+    manifestEditor->setPlainText(QString::fromUtf8(
+        QJsonDocument(manifest).toJson(QJsonDocument::Indented)));
     if(!viewport||!angle||!numeric||!viewport->rendererReady()){
         std::cerr<<"OpenGL rig viewport or physical input controls unavailable\n";return 4;
     }
