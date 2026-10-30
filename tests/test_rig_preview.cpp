@@ -1,5 +1,6 @@
 #include "io/RigTransforms.hpp"
 #include "io/RigAssetLoader.hpp"
+#include "io/RigBeltMesh.hpp"
 #include "io/VisualContract.hpp"
 #include <QCoreApplication>
 #include <QFile>
@@ -86,5 +87,30 @@ int main(int argc,char** argv){
     assert(assets.models.count("magneticraft2:studio/child")==1);
     assert(assets.models.at("magneticraft2:studio/child").triangles.size()==6);
     assert(assets.missingTextures.contains("minecraft:block/stripped_spruce_log"));
+    // The Stamp Mill belt must actually be a loop of 4-face strips with
+    // physical U-tiling, not one stretched texture across the whole run.
+    QJsonObject stamp;
+    QString beltError;
+    assert(VisualContract::parseObject(read(root+"animations/bronze_stamp_mill.json"),stamp,beltError));
+    const auto belt=stamp.value("belt_loops").toObject().value("drive_belt").toObject();
+    Geometry loop;
+    assert(RigBeltMesh::build(belt,loop,beltError));
+    assert(loop.draws.size()==1);
+    assert(loop.draws.front().count==loop.triangles.size());
+    assert(loop.triangles.size()>=24*36 && loop.triangles.size()<=24*192);
+    double minU=1e6,maxU=-1e6;
+    for(const auto& v:loop.triangles){
+        assert(std::isfinite(v.u)&&std::isfinite(v.v));
+        minU=std::min(minU,double(v.u));maxU=std::max(maxU,double(v.u));
+    }
+    assert(minU>=0 && maxU-minU>4.0);
+    // Reversed signed drives preserve continuous unwrapped belt travel.
+    QJsonObject m;
+    assert(VisualContract::parseObject(read(root+"machine_visuals/bronze_stamp_mill.json"),m,beltError));
+    RigPose reversed;
+    assert(RigTransforms::evaluate("bronze_stamp_mill",m,stamp,
+        {{"mechanical_input",0.0},{"output_shaft",-720.0}},
+        true,false,false,0,reversed,beltError));
+    assert(reversed.beltDistanceBlocks.at("drive_belt")<0);
     std::cout<<"Six machine rigs, rigid slider-crank and real model inheritance verified\n";
 }
