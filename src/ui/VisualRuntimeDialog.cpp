@@ -307,13 +307,14 @@ void VisualRuntimeDialog::loadRigAssets(){
         QMessageBox::warning(this,"Cannot load model geometry from invalid scene",error);return;
     }
     RigAssets imported;
-    if(!RigAssetLoader::load(folder,s,imported)){
+    if(!RigAssetLoader::load(folder,s,imported,machine_->currentText())){
         QMessageBox::warning(this,"Cannot read local model assets",imported.error);return;
     }
     rigAssets_=std::move(imported);
     rigAssetsLoaded_=true;
     settings.setValue("animation/asset-root",folder);
-    rigViewport_->setRigModels(rigAssets_.models,rigAssets_.textureProject.textures);
+    rigViewport_->setRigModels(rigAssets_.models,rigAssets_.textureProject.textures,
+                              rigAssets_.beltRepeats);
     sample();
     rigViewport_->frameRig();
     const QString message=QString("Real models: %1 loaded, %2 unresolved; PNGs: %3 missing.")

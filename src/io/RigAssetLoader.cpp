@@ -1,5 +1,6 @@
 #include "RigAssetLoader.hpp"
 #include "io/BlockModelImport.hpp"
+#include "io/RigBeltMesh.hpp"
 
 #include <QDir>
 #include <QFile>
@@ -8,6 +9,7 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QRegularExpression>
+#include <QImage>
 #include <QSet>
 #include <QHash>
 #include <algorithm>
@@ -101,7 +103,8 @@ QStringList modelsIn(const QJsonObject& scene){
     auto ids=required.values();ids.sort();return ids;
 }
 }
-bool RigAssetLoader::load(const QString& selected,const QJsonObject& scene,RigAssets& output){
+bool RigAssetLoader::load(const QString& selected,const QJsonObject& scene,RigAssets& output,
+                          const QString& javaMachine){
     RigAssets assets;
     const QString root=normalizeRoot(selected);
     if(root.isEmpty()){
@@ -144,15 +147,37 @@ bool RigAssetLoader::load(const QString& selected,const QJsonObject& scene,RigAs
     if(!textures.error.isEmpty())assets.warnings<<textures.error;
     assets.missingTextures=textures.missing;
     assets.warnings.append(textures.warnings);
-    // Direct belt textures use a full file resource path; not a block-atlas
-    // model texture, and not currently rendered by this rig mesh layer.
+    // Belt PNG is a *full direct file ID*, unlike Minecraft atlas aliases.
+    // Only the Stamp Mill Java renderer opts in to generic belt loops today.
     const auto belts=scene.value("belt_loops").toObject();
     for(auto it=belts.begin();it!=belts.end();++it){
-        const auto full=it.value().toObject().value("texture").toString();
+        const auto data=it.value().toObject();
+        const QString full=data.value("texture").toString();
+        if(javaMachine!="bronze_stamp_mill"){
+            assets.warnings<<"Java "+javaMachine+" does not draw generic belt loops: "+it.key();
+            continue;
+        }
         const QString relative="assets/"+full.section(':',0,0)+"/"+full.section(':',1);
-        if(!QFileInfo(QDir(root).filePath(relative)).isFile())
-            assets.warnings<<"Missing direct belt PNG "+full;
-        assets.warnings<<"Belt "+it.key()+" has numeric travel, but its surface mesh is not rendered yet";
+        QFile file(QDir(root).filePath(relative));
+        if(!file.exists() || file.size()>8*1024*1024 || !file.open(QIODevice::ReadOnly)){
+            assets.warnings<<"Missing or unreadable direct belt PNG "+full;
+            continue; // Never substitute a misleading procedurally textured belt.
+        }
+        const QByteArray png=file.readAll();
+        const QImage decoded=QImage::fromData(png,"PNG");
+        if(decoded.isNull()||decoded.width()>4096||decoded.height()>4096){
+            assets.warnings<<"Invalid direct belt PNG "+full;
+            continue;
+        }
+        Geometry beltMesh;QString beltError;
+        if(!RigBeltMesh::build(data,beltMesh,beltError)){
+            assets.warnings<<"Unable to build "+it.key()+" belt: "+beltError;
+            continue;
+        }
+        const std::string key="__belt/"+it.key().toStdString();
+        assets.models[key]=std::move(beltMesh);
+        assets.beltRepeats[it.key().toStdString()]=data.value("texture_repeat").toDouble();
+        assets.textureProject.textures[full.toStdString()]=png.toBase64().toStdString();
     }
     output=std::move(assets);
     output.error.clear();

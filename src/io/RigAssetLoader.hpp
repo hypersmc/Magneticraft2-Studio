@@ -13,6 +13,7 @@ namespace studio {
 // Never silently draw a fake machine part in place of an unavailable model.
 struct RigAssets {
     std::map<std::string,Geometry> models;
+    std::map<std::string,double> beltRepeats; // physical blocks per PNG U repeat
     Project textureProject;
     QStringList loadedModels;
     QStringList missingModels;
@@ -23,7 +24,8 @@ struct RigAssets {
 
 class RigAssetLoader final {
 public:
-    static bool load(const QString& assetRoot,const QJsonObject& scene,RigAssets& result);
+    static bool load(const QString& assetRoot,const QJsonObject& scene,RigAssets& result,
+                     const QString& javaMachine={});
     static TextureAssetReport addTextures(RigAssets& assets,const QString& source);
 };
 } // namespace studio
