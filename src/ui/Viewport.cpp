@@ -266,8 +266,11 @@ void Viewport::updateHud(){
     hud_->setText(QString("%5  /  %1    ·    %2    ·    SNAP %3    ·    Y %4")
         .arg(tool,camera,QString::number(gridStep_,'g',3),QString::number(workPlane_,'f',2),rigVisible_?"ANIMATE":"MODEL"));
     hud_->adjustSize();
-    help_->setText(activeTool_=='b'?"Click-drag grid: draw cuboid   ·   Scroll: zoom   ·   Right-drag: pan":
-        "Click: select   ·   RGB: axis   ·   Color squares: plane   ·   White center: free/uniform   ·   Scroll: zoom");
+    help_->setText(rigVisible_
+        ? "ANIMATE: select model part in Outliner   ·   bind it to a joint   ·   choose pivot   ·   scrub shaft angle below"
+        : activeTool_=='b'
+            ? "Click-drag grid: draw cuboid   ·   Scroll: zoom   ·   Right-drag: pan"
+            : "Click: select   ·   RGB: axis   ·   Color squares: plane   ·   White center: free/uniform   ·   Scroll: zoom");
 }
 
 void Viewport::updateCameraMatrices(){

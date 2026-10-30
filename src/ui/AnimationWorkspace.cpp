@@ -45,10 +45,10 @@ QString selectedTrack(const QComboBox* box){return box->currentData().toString()
 AnimationWorkspace::AnimationWorkspace(Viewport* viewport,QWidget* parent)
     :QWidget(parent),viewport_(viewport){
     setObjectName("AnimationWorkspacePanel");
-    setMinimumHeight(205);
+    setMinimumHeight(305);
     auto* main=new QVBoxLayout(this);
-    main->setContentsMargins(12,8,12,8);
-    main->setSpacing(6);
+    main->setContentsMargins(12,10,12,9);
+    main->setSpacing(8);
 
     auto* heading=new QHBoxLayout;
     auto* title=new QLabel("ANIMATE  /  SHARED MACHINE",this);

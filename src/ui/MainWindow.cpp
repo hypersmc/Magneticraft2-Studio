@@ -148,6 +148,7 @@ void MainWindow::buildUI(){
     canvasLayout->addWidget(sceneHeader);
 
     auto* splitter=new QSplitter(Qt::Vertical,canvasShell);
+    splitter->setObjectName("MainViewportSplitter");
     splitter->setChildrenCollapsible(false);
     splitter->addWidget(viewport_);
     layerContainer_=new QWidget(canvasShell);

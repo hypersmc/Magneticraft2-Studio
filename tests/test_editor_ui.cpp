@@ -184,6 +184,21 @@ int main(int argc,char** argv){
     if(!bind||!physicalAngle||!bind->isEnabled())return 26;
     qInfo("UX CHECKPOINT: binding authored cuboid");
     bind->click();QTest::qWait(250);
+    // An authored cuboid is normally centered in its own modeling space.
+    // The imported Java joint uses a controller-origin pivot. Explicitly
+    // request the authored cuboid pivot to keep it mechanically in place.
+    auto* adoptPivot=animation->findChild<QPushButton*>("AnimationUsePartPivot");
+    if(!adoptPivot || !adoptPivot->isEnabled())return 32;
+    adoptPivot->click();QTest::qWait(150);
+    const auto rigData=animation->metadata().value("scene").toObject();
+    const auto piv=rigData.value("components").toObject().value("drum").toObject()
+                           .value("pivot").toArray();
+    if(piv.size()!=3 || std::abs(piv[0].toDouble()-2.5)>0.0001 ||
+       std::abs(piv[1].toDouble()-1.6)>0.0001 ||
+       std::abs(piv[2].toDouble()-2.5)>0.0001){
+        qCritical("Authored drum pivot did not align with its selected geometry");
+        return 33;
+    }
     if(!animation->boundComponentIds().contains("drum")){
         qCritical("A modeled cuboid could not be assigned to the drum joint");return 27;
     }
