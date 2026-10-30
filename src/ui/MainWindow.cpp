@@ -7,6 +7,7 @@
 #include "io/ProjectIO.hpp"
 #include "io/AnimationExport.hpp"
 #include "VisualRuntimeDialog.hpp"
+#include "AnimationWorkspace.hpp"
 #include "io/BlockModelImport.hpp"
 #include "io/TextureAssets.hpp"
 #include "core/Modeling.hpp"
@@ -105,6 +106,7 @@ MainWindow::MainWindow(QWidget* parent):QMainWindow(parent),project_(makeDemo())
         auto* right=findChild<QDockWidget*>("PropertiesDock");
         if(left&&right)resizeDocks({left,right},{255,345},Qt::Horizontal);
     });
+    animationPanel_->setProject(project_,{});
     refreshAll();viewport_->resetCamera();
     // An empty launch is intentional. The user chooses what to make or learn.
     openHome();
@@ -166,7 +168,24 @@ void MainWindow::buildUI(){
     layerLayout->addWidget(layerToolbar);
     layerLayout->addWidget(layers_,1);
     splitter->addWidget(layerContainer_);
-    splitter->setStretchFactor(0,3);splitter->setStretchFactor(1,1);
+    animationPanel_=new AnimationWorkspace(viewport_,splitter);
+    splitter->addWidget(animationPanel_);
+    animationPanel_->hide();
+    splitter->setStretchFactor(0,3);
+    splitter->setStretchFactor(1,1);
+    splitter->setStretchFactor(2,1);
+    connect(animationPanel_,&AnimationWorkspace::animationChanged,this,
+            [this](const QJsonObject& visual){
+        loadedJson_["visualRuntime"]=visual;
+        dirty_=true;
+        updateTitle();
+    });
+    connect(animationPanel_,&AnimationWorkspace::componentsChanged,this,[this](){
+        if(animateWorkspace_ && tree_)refreshPartTree();
+    });
+    connect(animationPanel_,&AnimationWorkspace::message,this,[this](const QString& msg){
+        statusBar()->showMessage(msg,6500);
+    });
     // The UV workspace is a first-class editing surface, not a small
     // rectangle buried in the properties dock. In Model mode it is hidden and
     // the same OpenGL viewport gets the full canvas width.
@@ -283,6 +302,11 @@ void MainWindow::buildUI(){
     connect(tree_,&QTreeWidget::currentItemChanged,this,[this](QTreeWidgetItem* item,QTreeWidgetItem*){
         if(updating_)return;
         const int index=item?item->data(0,Qt::UserRole).toInt():-1;
+        if(animateWorkspace_ && animationPanel_ && index==-2 && item &&
+           !item->data(0,Qt::UserRole+1).toString().isEmpty()){
+            animationPanel_->selectComponent(item->data(0,Qt::UserRole+1).toString());
+            return;
+        }
         setSelected(index);
     });
     connect(viewport_,&Viewport::partSelected,this,&MainWindow::setSelected);
@@ -682,14 +706,19 @@ void MainWindow::createMenus(){
     file->addAction("Load unpacked texture assets folder...",this,&MainWindow::importMinecraftAssetFolder);
     file->addSeparator();
     file->addAction("Export project...",this,&MainWindow::exportDialog);
-    file->addAction("Edit Machine Visual JSON (runtime v1)...",this,[this](){
+    file->addAction("Advanced / Machine Visual JSON (runtime v1)...",this,[this](){
         if(project_.kind!=ProjectKind::Multiblock){
             QMessageBox::information(this,"Machine visuals require a multiblock",
                "Java block models cannot define a functional Magneticraft2 machine renderer.");return;
         }
         VisualRuntimeDialog dialog(loadedJson_.value("visualRuntime").toObject(),this);
         if(dialog.exec()!=QDialog::Accepted)return;
-        loadedJson_["visualRuntime"]=dialog.metadata();
+        QJsonObject updated=dialog.metadata();
+        const auto previous=loadedJson_.value("visualRuntime").toObject();
+        if(previous.contains("assetSource")&&!updated.contains("assetSource"))
+            updated["assetSource"]=previous.value("assetSource");
+        loadedJson_["visualRuntime"]=updated;
+        animationPanel_->setProject(project_,updated);
         dirty_=true;updateTitle();
         statusBar()->showMessage("Machine visual JSON saved in this Studio project",6500);
     });
@@ -706,7 +735,7 @@ void MainWindow::createMenus(){
         QMessageBox::information(this,"Animation definition exported",
             "The JSON binds named components to existing Minecraft model resource IDs "
             "and Gear V2 motion inputs. Studio has NOT generated the animated meshes "
-            "or implemented a full animation preview.");
+            "in that legacy export. Use the ANIMATE workspace for native v1 preview.");
     });
     file->addSeparator();file->addAction("Quit",QKeySequence::Quit,this,&QWidget::close);
 
@@ -755,36 +784,50 @@ void MainWindow::createMenus(){
     workspaceBuild_=new QToolButton(this);
     workspaceModel_=new QToolButton(this);
     workspaceUV_=new QToolButton(this);
+    workspaceAnimate_=new QToolButton(this);
     workspaceBuild_->setObjectName("WorkspaceBuild");
     workspaceModel_->setObjectName("WorkspaceModel");
     workspaceUV_->setObjectName("WorkspaceUV");
-    for(auto* button:{workspaceBuild_,workspaceModel_,workspaceUV_}){
+    workspaceAnimate_->setObjectName("WorkspaceAnimate");
+    for(auto* button:{workspaceBuild_,workspaceModel_,workspaceUV_,workspaceAnimate_}){
         button->setProperty("workspaceTab",true);button->setCheckable(true);
         header->addWidget(button);
     }
     workspaceBuild_->setText("BUILD");workspaceBuild_->setToolTip("Define the blocks players assemble");
     workspaceModel_->setText("MODEL");workspaceModel_->setToolTip("Edit the formed machine geometry");
     workspaceUV_->setText("UV / TEXTURE");workspaceUV_->setToolTip("Edit per-face texture mapping");
+    workspaceAnimate_->setText("ANIMATE");
+    workspaceAnimate_->setToolTip("Create and preview machine rotation and pivots using the same model");
     workspaceBuild_->setAccessibleName("Construction workspace");
     workspaceModel_->setAccessibleName("Model workspace");
     workspaceUV_->setAccessibleName("UV and textures workspace");
+    workspaceAnimate_->setAccessibleName("Animation workspace");
     connect(workspaceBuild_,&QToolButton::clicked,this,[this](){
-        uvWorkspace_=false;mode_->setCurrentIndex(0);switchWorkspace();
+        uvWorkspace_=false;animateWorkspace_=false;mode_->setCurrentIndex(0);switchWorkspace();
     });
     connect(workspaceModel_,&QToolButton::clicked,this,[this](){
-        uvWorkspace_=false;mode_->setCurrentIndex(1);
+        uvWorkspace_=false;animateWorkspace_=false;mode_->setCurrentIndex(1);
         if(auto* p=findChild<QDockWidget*>("PropertiesDock"))p->raise();
         switchWorkspace();
         QTimer::singleShot(0,viewport_,&Viewport::resetCamera);
     });
     connect(workspaceUV_,&QToolButton::clicked,this,[this](){
-        uvWorkspace_=true;mode_->setCurrentIndex(1);
+        uvWorkspace_=true;animateWorkspace_=false;mode_->setCurrentIndex(1);
         // UVs have no use for the transform gizmo; keep the preview clean.
         const int select=tool_->findData(int('v'));
         if(select>=0)tool_->setCurrentIndex(select);
         if(textureDock_)textureDock_->raise();
         switchWorkspace();
         QTimer::singleShot(0,viewport_,&Viewport::resetCamera);
+    });
+    connect(workspaceAnimate_,&QToolButton::clicked,this,[this](){
+        if(project_.kind==ProjectKind::JavaBlock)return;
+        uvWorkspace_=false;animateWorkspace_=true;
+        mode_->setCurrentIndex(1);
+        const int select=tool_->findData(int('v'));
+        if(select>=0)tool_->setCurrentIndex(select);
+        switchWorkspace();
+        refreshPartTree();
     });
     header->addSeparator();
     auto* homeButton=new QPushButton("Home",this);
@@ -939,6 +982,22 @@ void MainWindow::refreshPartTree(){
         if(!part.visible)item->setForeground(0,QColor("#667681"));
         if(int(i)==selected_)tree_->setCurrentItem(item);
     }
+    if(animateWorkspace_ && animationPanel_){
+        auto* rigHeader=new QTreeWidgetItem(tree_);
+        rigHeader->setText(0,"ANIMATED COMPONENTS");
+        rigHeader->setData(0,Qt::UserRole,-2);
+        rigHeader->setForeground(0,QColor("#e5b483"));
+        const auto selectedComponent=animationPanel_->selectedComponentId();
+        for(const auto& id:animationPanel_->componentIds()){
+            auto* child=new QTreeWidgetItem(rigHeader);
+            child->setText(0,id);
+            child->setData(0,Qt::UserRole,-2);
+            child->setData(0,Qt::UserRole+1,id);
+            if(id==selectedComponent)tree_->setCurrentItem(child);
+        }
+        const auto old=expansion.find("ANIMATED COMPONENTS");
+        rigHeader->setExpanded(old==expansion.end()?true:old->second);
+    }
     filterOutliner();
 }
 void MainWindow::refreshInspector(){
@@ -987,7 +1046,12 @@ void MainWindow::refreshScene(){
     if(sceneInfo_) {
         const bool staticReference=view.showFormed &&
             project_.notes.find("Static body only")!=std::string::npos;
-        if(staticReference){
+        if(animateWorkspace_){
+            sceneInfo_->setText("EDITABLE STATIC MODEL + JSON-DRIVEN RIG  ·  runtime effects may differ");
+            sceneInfo_->setToolTip("Same Studio model and texture project, with mechanically driven JSON rig overlays. "
+                "Some Forge renderer layers (water/items/particles) still require in-game verification.");
+            sceneInfo_->setStyleSheet("color:#e2b17c; font-weight:600;");
+        }else if(staticReference){
             const int unresolved=missingTextureIds(project_).size();
             sceneInfo_->setText(QString("STATIC BODY ONLY  ·  %1 missing PNG%2  ·  moving parts excluded")
                 .arg(unresolved).arg(unresolved==1?"":"s"));
@@ -1070,11 +1134,13 @@ void MainWindow::addDrawnBox(double x0,double z0,double x1,double z1){
 void MainWindow::switchWorkspace(){
     if(!mode_||!viewport_||!layerContainer_)return;
     const bool isModel=mode_->currentIndex()==1;
-    if(!isModel)uvWorkspace_=false;
+    if(!isModel){uvWorkspace_=false;animateWorkspace_=false;}
+    const bool animated=isModel && animateWorkspace_ && project_.kind==ProjectKind::Multiblock;
     layerContainer_->setVisible(!isModel);
-    if(toolRail_)toolRail_->setVisible(isModel&&!uvWorkspace_);
+    if(animationPanel_)animationPanel_->setVisible(animated);
+    if(toolRail_)toolRail_->setVisible(isModel&&!uvWorkspace_&&!animated);
     if(uvWorkspacePanel_)uvWorkspacePanel_->setVisible(isModel&&uvWorkspace_);
-    if(textureDock_)textureDock_->setVisible(isModel);
+    if(textureDock_)textureDock_->setVisible(isModel&&!animated);
     if(workspaceBuild_)workspaceBuild_->setEnabled(project_.kind!=ProjectKind::JavaBlock);
     if(ghost_)ghost_->setEnabled(project_.kind!=ProjectKind::JavaBlock);
     if(snap_)snap_->setEnabled(isModel);
@@ -1085,16 +1151,20 @@ void MainWindow::switchWorkspace(){
     }
     if(drawHeight_)drawHeight_->setEnabled(isModel&&tool_->currentData().toInt()==int('b'));
     if(ghost_)ghost_->setEnabled(isModel&&project_.kind!=ProjectKind::JavaBlock);
-    if(modelToolbar_)modelToolbar_->setVisible(isModel&&!uvWorkspace_);
+    if(modelToolbar_)modelToolbar_->setVisible(isModel&&!uvWorkspace_&&!animated);
+    if(workspaceAnimate_)workspaceAnimate_->setEnabled(project_.kind!=ProjectKind::JavaBlock);
+    if(animationPanel_)animationPanel_->activate(animated);
     syncWorkspaceChrome();
     refreshScene();
 }
 void MainWindow::syncWorkspaceChrome(){
     const bool isModel=mode_&&mode_->currentIndex()==1;
     if(workspaceBuild_)workspaceBuild_->setChecked(!isModel);
-    if(workspaceModel_)workspaceModel_->setChecked(isModel&&!uvWorkspace_);
+    if(workspaceModel_)workspaceModel_->setChecked(isModel&&!uvWorkspace_&&!animateWorkspace_);
     if(workspaceUV_)workspaceUV_->setChecked(isModel&&uvWorkspace_);
-    if(sceneTitle_)sceneTitle_->setText(isModel?(uvWorkspace_?"UV  /  3D PREVIEW":"FORMED MODEL  /  3D EDITOR"):
+    if(workspaceAnimate_)workspaceAnimate_->setChecked(isModel&&animateWorkspace_);
+    if(sceneTitle_)sceneTitle_->setText(isModel?(animateWorkspace_?"ANIMATE  /  SHARED 3D VIEW":
+        uvWorkspace_?"UV  /  3D PREVIEW":"FORMED MODEL  /  3D EDITOR"):
         "CONSTRUCTION  /  BUILD LAYOUT");
     if(tool_){
         const char current=char(tool_->currentData().toInt());
@@ -1355,6 +1425,7 @@ void MainWindow::openHome(){
     if(!maybeSave())return;
     hasDocument_=false;atHome_=true;dirty_=false;
     if(startPage_)startPage_->setRecentProjects(recentProjects_);
+    if(animationPanel_)animationPanel_->activate(false);
     if(centralStack_)centralStack_->setCurrentWidget(startPage_);
     for(auto* dock:findChildren<QDockWidget*>())dock->hide();
     for(auto* bar:findChildren<QToolBar*>())bar->hide();

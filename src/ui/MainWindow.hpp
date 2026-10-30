@@ -29,6 +29,7 @@ class Viewport;
 class UvEditor;
 class UvFaceOverview;
 class StartPage;
+class AnimationWorkspace;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -129,8 +130,11 @@ private:
     QToolButton* workspaceBuild_=nullptr;
     QToolButton* workspaceModel_=nullptr;
     QToolButton* workspaceUV_=nullptr;
+    QToolButton* workspaceAnimate_=nullptr;
     std::map<char,QToolButton*> railButtons_;
     bool uvWorkspace_=false;
+    bool animateWorkspace_=false;
+    AnimationWorkspace* animationPanel_=nullptr;
     LayerCanvas* layers_=nullptr;
     QWidget* layerContainer_=nullptr;
     QToolBar* modelToolbar_=nullptr;
