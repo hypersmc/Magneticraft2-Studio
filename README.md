@@ -30,30 +30,34 @@ set **VIEW = Top**, **PLANE Y = 1**, **HEIGHT = 1/4**, **SNAP = 1/16**,
 and drag in the viewport. Then select the beam and resize it with the handles.
 Save and reopen the `.mcraftstudio.json` project to verify it persists.
 
-## Magneticraft2 Java visual animations (draft PR #3)
+## Magneticraft2 animations — integrated Animate workspace (draft PR #3)
 
-**File → Edit Machine Visual JSON (runtime v1)...** opens a native Qt/OpenGL
-animated-machine editor. Choose one of six actual Java machine types:
-Bronze Lathe, Mechanical Sifter, Primitive Grinder, Ore Washer, Bronze Stamp
-Mill or Rotary Ore Classifier. Studio **bundles the matching v1 manifest and
-scene for each machine**; selecting Ore Washer automatically uses its real
-`trommel` source, not the Grinder's `mechanical_input`. No mod source download
-is required just to open and edit these examples.
+Studio now has **BUILD · MODEL · UV / TEXTURE · ANIMATE** in the same machine
+document. Animate shares the existing OpenGL viewport, model geometry,
+textures, Outliner and saved Studio project. It's not a separate viewer.
 
-Click **Open Magneticraft2 JAR...** to load the selected machine's real
-manifest, scene, baked model JSON and textures directly from your installed
-mod JAR. It does not use an external unzip command or write to the JAR.
-Alternatively, **Load model assets from folder...** reads an unpacked
-`assets/` tree. To fill in missing vanilla textures, choose the local
-Minecraft client JAR with **Add missing PNGs from Minecraft JAR...**.
+To animate your own cuboid, select the part in the Outliner, switch to
+**ANIMATE**, choose a Java runtime component (for example the Ore Washer
+drum), and click **Bind selected cuboid to joint**. You can explicitly
+use that cuboid's pivot, edit an existing rotation or add one with an
+axis, mechanical input, ratio, phase and condition. The rig is driven
+by the actual mod v1 JSON schema, not by a new fixed-speed animation format.
 
-The animation viewport supports component hierarchy and pivots, physical
-shaft angles, state-driven tracks, wear variants, Sifter slider-crank
-closure and the Stamp Mill's shaft-driven belt path. Static Java-rendered
-machine bodies, N/E/W whole-machine facing, complete mod visual effects
-and full pack ZIP export are **not yet reproduced**. The existing
-rotation-only export bridge is retained. See
-[Visual runtime v1](docs/VISUAL_RUNTIME_V1.md) for limitations and testing.
+Studio embeds the exact v1 definitions for all six current Java machines.
+**Choose mod JAR...** imports real baked models and textures from an
+installed Magneticraft2 JAR, without downloading the mod source.
+Once selected, the path is remembered in local settings and optionally
+the project; models stay cached across workspace switches.
+Vanilla textures can be added from a Minecraft client JAR once as well.
+External PNGs are not redistributed with Studio.
+
+The earlier advanced raw JSON dialog remains available from File, and
+the old Studio legacy motion fields are preserved. Full formed-machine
+renderer parity, export of a complete resource-pack ZIP, 3D pivot gizmos
+and Forge runtime visual verification remain in progress.
+
+See [Animate workspace](docs/ANIMATE_WORKSPACE.md) and
+[runtime v1 details](docs/VISUAL_RUNTIME_V1.md).
 ## Arch Linux / KDE: build and run
 
 Install build dependencies:
