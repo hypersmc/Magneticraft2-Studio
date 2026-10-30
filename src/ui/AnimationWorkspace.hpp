@@ -29,6 +29,9 @@ public:
     void setProject(const Project& project,const QJsonObject& visualRuntime);
     void activate(bool visible);
     QStringList componentIds() const;
+    QStringList boundComponentIds() const;
+    void setAuthoredProject(const Project& project);
+    void setSelectedModelPart(const QString& partId,const QString& partName,const QString& currentRig);
     QString selectedComponentId() const;
     void selectComponent(const QString& id);
     QJsonObject metadata() const;
@@ -37,12 +40,15 @@ signals:
     void animationChanged(const QJsonObject& metadata);
     void componentsChanged();
     void message(const QString& text);
+    void bindPartRequested(const QString& partId,const QString& componentId);
 private:
     void refreshComponents();
     void refreshTrackControls();
     void refreshInputs();
     void inspectPose();
     void refreshAssets(bool force=false);
+    void rebuildAuthoredGeometry();
+    void publishRigModels();
     void changeMachine(const QString& machine);
     void changeRotation();
     void changePivot();
@@ -75,11 +81,17 @@ private:
     QPushButton* play_=nullptr;
     QLabel* status_=nullptr;
     QLabel* assetStatus_=nullptr;
+    QLabel* selectedPartStatus_=nullptr;
+    QPushButton* bindPartButton_=nullptr;
+    QPushButton* unbindPartButton_=nullptr;
     QTimer* timer_=nullptr;
     QElapsedTimer clock_;
     QJsonObject manifest_,scene_;
     QMap<QString,double> previewAngles_;
     std::shared_ptr<const RigAssets> assets_;
+    QString selectedPartId_;
+    Project authoredProject_;
+    std::map<std::string,Geometry> authoredMeshes_;
     QString sourcePath_;
     QString vanillaPath_;
     bool active_=false;

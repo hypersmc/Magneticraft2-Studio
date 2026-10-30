@@ -12,6 +12,8 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QMatrix4x4>
+#include <QVector3D>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -64,6 +66,19 @@ AnimationWorkspace::AnimationWorkspace(Viewport* viewport,QWidget* parent)
     heading->addWidget(component_,2);
     heading->addStretch();
     main->addLayout(heading);
+    auto* binding=new QHBoxLayout;
+    selectedPartStatus_=new QLabel("Select a model cuboid in the Outliner to assign it to a joint.",this);
+    selectedPartStatus_->setObjectName("AnimationSelectedModelPart");
+    binding->addWidget(selectedPartStatus_,1);
+    bindPartButton_=new QPushButton("Bind selected cuboid to joint",this);
+    bindPartButton_->setObjectName("AnimationBindPart");
+    binding->addWidget(bindPartButton_);
+    unbindPartButton_=new QPushButton("Unbind",this);
+    unbindPartButton_->setObjectName("AnimationUnbindPart");
+    binding->addWidget(unbindPartButton_);
+    bindPartButton_->setEnabled(false);
+    unbindPartButton_->setEnabled(false);
+    main->addLayout(binding);
 
     auto* columns=new QHBoxLayout;
     columns->setSpacing(12);
@@ -204,6 +219,13 @@ AnimationWorkspace::AnimationWorkspace(Viewport* viewport,QWidget* parent)
         previewAngles_[previewSource_->currentText()]=degrees;
         inspectPose();
     });
+    connect(bindPartButton_,&QPushButton::clicked,this,[this](){
+        if(!selectedPartId_.isEmpty()&&!component_->currentText().isEmpty())
+            emit bindPartRequested(selectedPartId_,component_->currentText());
+    });
+    connect(unbindPartButton_,&QPushButton::clicked,this,[this](){
+        if(!selectedPartId_.isEmpty())emit bindPartRequested(selectedPartId_,{});
+    });
     connect(applyRotation,&QPushButton::clicked,this,&AnimationWorkspace::changeRotation);
     connect(savePivot,&QPushButton::clicked,this,&AnimationWorkspace::changePivot);
     connect(frame,&QPushButton::clicked,viewport_,&Viewport::frameRig);
@@ -231,6 +253,12 @@ QString AnimationWorkspace::detectMachine(const QString& title) const{
 void AnimationWorkspace::setProject(const Project& p,const QJsonObject& saved){
     stopPlayback();
     kind_=p.kind;
+    authoredProject_=p;
+    authoredMeshes_.clear();
+    selectedPartId_.clear();
+    selectedPartStatus_->setText("Select a model cuboid in the Outliner to assign it to a joint.");
+    bindPartButton_->setEnabled(false);
+    unbindPartButton_->setEnabled(false);
     viewport_->clearRig();
     assets_.reset();
     previewAngles_.clear();
@@ -272,8 +300,29 @@ void AnimationWorkspace::activate(bool visible){
         stopPlayback();
         return;
     }
+    rebuildAuthoredGeometry();
     if(!assets_)refreshAssets();
+    else publishRigModels();
     inspectPose();
+}
+QStringList AnimationWorkspace::boundComponentIds() const{
+    QStringList ids;
+    for(const auto& entry:authoredMeshes_)ids.append(QString::fromStdString(entry.first));
+    return ids;
+}
+void AnimationWorkspace::setAuthoredProject(const Project& project){
+    authoredProject_=project;
+    if(active_)rebuildAuthoredGeometry();
+}
+void AnimationWorkspace::setSelectedModelPart(const QString& partId,const QString& partName,
+                                             const QString& currentRig){
+    selectedPartId_=partId;
+    selectedPartStatus_->setText(partId.isEmpty()
+        ?QString("Select a model cuboid in the Outliner to assign it to a joint.")
+        :partName+(currentRig.isEmpty()?QString("  ·  not bound")
+                                         :QString("  ·  bound to ")+currentRig));
+    bindPartButton_->setEnabled(!partId.isEmpty());
+    unbindPartButton_->setEnabled(!partId.isEmpty()&&!currentRig.isEmpty());
 }
 QStringList AnimationWorkspace::componentIds() const{
     return scene_.value("components").toObject().keys();
@@ -385,14 +434,81 @@ void AnimationWorkspace::inspectPose(){
     }
     status_->setText(QString("%1 animated components  /  physical motion drives preview  /  editing project JSON v1")
                      .arg(pose.components.size()));
+    for(auto& [id,component]:pose.components)
+        if(authoredMeshes_.count(id))
+            component.modelId="__studio_part/"+id;
     viewport_->setRigPose(pose);
+}
+void AnimationWorkspace::rebuildAuthoredGeometry(){
+    authoredMeshes_.clear();
+    if(kind_!=ProjectKind::Multiblock)return;
+    QMap<QString,double> restAngles;
+    for(const auto& name:VisualContract::availableAngles(machine_->currentText()))
+        restAngles[name]=0.0;
+    RigPose rest;
+    QString error;
+    if(!RigTransforms::evaluate(machine_->currentText(),manifest_,scene_,restAngles,
+          true,false,false,0,rest,error)){
+        emit message("Cannot map authored parts onto invalid runtime rig: "+error);
+        return;
+    }
+    std::map<std::string,std::vector<Part>> groups;
+    for(const auto& part:authoredProject_.parts){
+        if(part.rigComponentId.empty())continue;
+        if(rest.components.find(part.rigComponentId)==rest.components.end())continue;
+        if(part.visible && validBounds(part.bounds))
+            groups[part.rigComponentId].push_back(part);
+    }
+    BuildOptions options;
+    options.showFormed=true;
+    options.showConstruction=false;
+    options.showGrid=false;
+    options.selectedPart=-1;
+    for(auto& [name,parts]:groups){
+        Project subset=makeProject("Authored animation component",authoredProject_.dimensions);
+        subset.parts=std::move(parts);
+        subset.cells.clear();
+        Geometry geometry=buildGeometry(subset,options);
+        if(geometry.triangles.empty())continue;
+        bool invertible=false;
+        const auto inverse=rest.components.at(name).world.inverted(&invertible);
+        if(!invertible){
+            emit message("Cannot invert the rest transform for "+QString::fromStdString(name));
+            continue;
+        }
+        const QMatrix3x3 normalMatrix=inverse.normalMatrix();
+        for(auto& vertex:geometry.triangles){
+            const auto position=inverse.map(QVector3D(vertex.x,vertex.y,vertex.z));
+            vertex.x=position.x();vertex.y=position.y();vertex.z=position.z();
+            auto normal=normalMatrix*QVector3D(vertex.nx,vertex.ny,vertex.nz);
+            if(normal.lengthSquared()>1e-6f)normal.normalize();
+            vertex.nx=normal.x();vertex.ny=normal.y();vertex.nz=normal.z();
+        }
+        authoredMeshes_[name]=std::move(geometry);
+    }
+    publishRigModels();
+    inspectPose();
+}
+void AnimationWorkspace::publishRigModels(){
+    if(!active_)return;
+    std::map<std::string,Geometry> models;
+    std::map<std::string,std::string> textures;
+    std::map<std::string,double> belts;
+    if(assets_){
+        models=assets_->models;
+        textures=assets_->textureProject.textures;
+        belts=assets_->beltRepeats;
+    }
+    for(const auto& [name,geometry]:authoredMeshes_)
+        models["__studio_part/"+name]=geometry;
+    viewport_->setRigModels(models,textures,belts);
 }
 void AnimationWorkspace::refreshAssets(bool force){
     if(!active_)return;
     if(sourcePath_.isEmpty() || !QFileInfo::exists(sourcePath_)){
         assets_.reset();
-        viewport_->setRigModels({},{});
-        assetStatus_->setText("Select a local Magneticraft2 JAR once; Studio restores this choice automatically.");
+        publishRigModels(); // Authored Studio components still animate without a mod JAR.
+        assetStatus_->setText("No mod JAR selected. Studio-authored bound cuboids can still animate.");
         inspectPose();
         return;
     }
@@ -407,8 +523,7 @@ void AnimationWorkspace::refreshAssets(bool force){
     }
     const bool changed=loaded!=assets_;
     assets_=std::move(loaded);
-    if(changed)viewport_->setRigModels(assets_->models,assets_->textureProject.textures,
-                                     assets_->beltRepeats);
+    if(changed)publishRigModels();
     inspectPose();
     if(changed)viewport_->frameRig();
     assetStatus_->setText(QString("%1 models  /  %2 missing models  /  %3 missing PNGs  /  %4")
@@ -501,6 +616,7 @@ void AnimationWorkspace::changeMachine(const QString& machine){
     manifest_=nextManifest;scene_=nextScene;acceptedMachine_=machine;
     hasSavedRuntime_=true;
     assets_.reset();previewAngles_.clear();
+    rebuildAuthoredGeometry();
     refreshComponents();refreshInputs();
     refreshAssets();
     emit animationChanged(metadata());
@@ -514,6 +630,7 @@ bool AnimationWorkspace::saveChanges(QJsonObject m,QJsonObject s,const QString& 
     }
     manifest_=std::move(m);scene_=std::move(s);
     hasSavedRuntime_=true;
+    rebuildAuthoredGeometry();
     refreshComponents();refreshInputs();refreshAssets();
     emit animationChanged(metadata());
     emit message(action+" saved in Studio project");
