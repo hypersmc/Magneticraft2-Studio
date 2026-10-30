@@ -35,7 +35,8 @@ public:
     void setScene(const Project& p,BuildOptions options);
     void invalidateTextures(); // Called when switching project or replacing embedded PNG data.
     void setRigModels(const std::map<std::string,Geometry>& models,
-                      const std::map<std::string,std::string>& textures);
+                      const std::map<std::string,std::string>& textures,
+                      const std::map<std::string,double>& beltRepeats={});
     void setRigPose(const RigPose& pose);
     void clearRig();
     void frameRig();
@@ -106,6 +107,7 @@ private:
     std::map<std::string,Geometry> rigSourceMeshes_;
     std::map<std::string,std::unique_ptr<RigGpuModel>> rigGpuMeshes_;
     RigPose rigPose_;
+    std::map<std::string,double> rigBeltRepeats_;
     bool rigGpuDirty_=false;
     struct CachedTexture { std::size_t signature=0;std::unique_ptr<QOpenGLTexture> gpu; };
     std::map<std::string,CachedTexture> textureCache_;

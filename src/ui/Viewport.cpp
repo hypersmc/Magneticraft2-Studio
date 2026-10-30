@@ -92,8 +92,10 @@ void Viewport::setScene(const Project& document,BuildOptions options){
     rebuildAsync();
 }
 void Viewport::setRigModels(const std::map<std::string,Geometry>& models,
-                            const std::map<std::string,std::string>& textures){
+                            const std::map<std::string,std::string>& textures,
+                            const std::map<std::string,double>& beltRepeats){
     rigSourceMeshes_=models;
+    rigBeltRepeats_=beltRepeats;
     document_.textures=textures; // Actual imported PNG bytes, never fake paths.
     texturesDirty_=true;
     rigGpuDirty_=true; // Uploaded only after GL context is current.
@@ -105,6 +107,7 @@ void Viewport::setRigPose(const RigPose& pose){
 }
 void Viewport::clearRig(){
     rigSourceMeshes_.clear();
+    rigBeltRepeats_.clear();
     rigPose_={};
     rigGpuDirty_=true;
     update();
@@ -211,10 +214,11 @@ layout(location=1) in vec3 aColor;
 layout(location=2) in vec3 aNormal;
 layout(location=3) in vec2 aUv;
 uniform mat4 uMvp;
+uniform mat3 uNormalMat;
 out vec3 vColor;
 out vec3 vNormal;
 out vec2 vUv;
-void main(){gl_Position=uMvp*vec4(aPosition,1.0);vColor=aColor;vNormal=aNormal;vUv=aUv;}
+void main(){gl_Position=uMvp*vec4(aPosition,1.0);vColor=aColor;vNormal=uNormalMat*aNormal;vUv=aUv;}
 )";
     constexpr const char* fragment=R"(#version 330 core
 in vec3 vColor;
@@ -223,10 +227,11 @@ in vec2 vUv;
 uniform sampler2D uTexture;
 uniform bool uTextured;
 uniform int uRenderLayer;
+uniform float uUvScroll;
 out vec4 fragColor;
 void main(){
     float l=length(vNormal)<0.1?1.0:(0.54+0.46*max(0.0,dot(normalize(vNormal),normalize(vec3(0.48,0.9,0.4)))));
-    vec4 diffuse=uTextured?texture(uTexture,vec2(vUv.x,1.0-vUv.y)):vec4(1.0);
+    vec4 diffuse=uTextured?texture(uTexture,vec2(vUv.x+uUvScroll,1.0-vUv.y)):vec4(1.0);
     if(uRenderLayer==1 && diffuse.a<0.5)discard;
     fragColor=vec4(vColor*diffuse.rgb*l,diffuse.a);
 }
@@ -378,6 +383,9 @@ void Viewport::paintGL(){
     if(texturesDirty_){textureCache_.clear();texturesDirty_=false;}
     uploadBuffers();
     shader_.bind();shader_.setUniformValue("uMvp",mvp_);
+    QMatrix4x4 unrotated;unrotated.setToIdentity();
+    shader_.setUniformValue("uNormalMat",unrotated.normalMatrix());
+    shader_.setUniformValue("uUvScroll",0.0f);
     shader_.setUniformValue("uTexture",0);
     shader_.setUniformValue("uRenderLayer",0);
     vao_.bind();
@@ -400,18 +408,21 @@ void Viewport::paintGL(){
     }
     drawBuffer(lines_,mesh_.lines,GL_LINES);
     uploadRigBuffers();
-    for(const auto& [id,pose]:rigPose_.components){
-        Q_UNUSED(id);
-        if(!pose.visible||pose.modelId.empty())continue;
-        const auto it=rigGpuMeshes_.find(pose.modelId);
-        if(it==rigGpuMeshes_.end())continue; // Unresolved models are not invented.
+    // Cache actual model and belt vertices once, then animate GPU matrices and
+    // modulo-reduced UV phases without rebuilding geometry on every frame.
+    auto drawRigMesh=[&](const std::string& resource,const QMatrix4x4& world,
+                         const QString& layer,float uvScroll){
+        const auto it=rigGpuMeshes_.find(resource);
+        if(it==rigGpuMeshes_.end())return;
         auto& mesh=*it->second;
-        const bool transparent=pose.renderLayer=="translucent";
+        const bool transparent=layer=="translucent";
         if(transparent){
             glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
         }
-        shader_.setUniformValue("uMvp",mvp_*pose.world);
-        shader_.setUniformValue("uRenderLayer",pose.renderLayer=="cutout"?1:0);
+        shader_.setUniformValue("uMvp",mvp_*world);
+        shader_.setUniformValue("uNormalMat",world.normalMatrix());
+        shader_.setUniformValue("uUvScroll",uvScroll);
+        shader_.setUniformValue("uRenderLayer",layer=="cutout"?1:0);
         mesh.vertices.bind();
         glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
         glEnableVertexAttribArray(2);glEnableVertexAttribArray(3);
@@ -428,8 +439,23 @@ void Viewport::paintGL(){
         shader_.setUniformValue("uTextured",0);
         mesh.vertices.release();
         if(transparent)glDisable(GL_BLEND);
+    };
+    for(const auto& [id,pose]:rigPose_.components){
+        Q_UNUSED(id);
+        if(!pose.visible||pose.modelId.empty())continue;
+        drawRigMesh(pose.modelId,pose.world,pose.renderLayer,0.0f);
+    }
+    QMatrix4x4 beltFrame;beltFrame.setToIdentity();
+    for(const auto& [id,distance]:rigPose_.beltDistanceBlocks){
+        const auto repeat=rigBeltRepeats_.find(id);
+        if(repeat==rigBeltRepeats_.end()||repeat->second<=0)continue;
+        double phase=std::fmod(distance,repeat->second);
+        if(phase<0)phase+=repeat->second;
+        drawRigMesh("__belt/"+id,beltFrame,"cutout",float(phase/repeat->second));
     }
     shader_.setUniformValue("uMvp",mvp_);
+    shader_.setUniformValue("uNormalMat",unrotated.normalMatrix());
+    shader_.setUniformValue("uUvScroll",0.0f);
     shader_.setUniformValue("uRenderLayer",0);
     vao_.release();shader_.release();
     glDisable(GL_DEPTH_TEST);
