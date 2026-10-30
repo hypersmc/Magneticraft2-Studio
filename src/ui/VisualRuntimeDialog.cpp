@@ -1,5 +1,7 @@
 #include "VisualRuntimeDialog.hpp"
 #include "io/VisualContract.hpp"
+#include "io/RigTransforms.hpp"
+#include "ui/Viewport.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -19,6 +21,11 @@
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QTimer>
+#include <QElapsedTimer>
+#include <QSignalBlocker>
+#include <QSettings>
+#include <QDir>
 #include <QVBoxLayout>
 
 namespace studio {
@@ -97,15 +104,29 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     sl->addWidget(importSceneButton);
     editors->addWidget(sceneBox);
     editors->setStretchFactor(0,1);editors->setStretchFactor(1,2);
-    layout->addWidget(editors,4);
+    layout->addWidget(editors,3);
     auto* previewPanel=new QGroupBox("Deterministic runtime pose inspection — physical shaft angle",this);
     auto* pl=new QVBoxLayout(previewPanel);
     auto* controls=new QHBoxLayout;
+    angleSource_=new QComboBox(previewPanel);
+    angleSource_->setObjectName("VisualPhysicalSource");
+    controls->addWidget(new QLabel("Java shaft",previewPanel));
+    controls->addWidget(angleSource_);
     shaftAngle_=new QDoubleSpinBox(previewPanel);
     shaftAngle_->setObjectName("VisualPhysicalAngle");
-    shaftAngle_->setRange(-720,720);shaftAngle_->setSingleStep(15);
-    shaftAngle_->setSuffix("°");
-    controls->addWidget(new QLabel("Angle",previewPanel));controls->addWidget(shaftAngle_);
+    shaftAngle_->setDecimals(2);shaftAngle_->setRange(-10000000,10000000);
+    shaftAngle_->setSingleStep(15);shaftAngle_->setSuffix(" deg");
+    controls->addWidget(shaftAngle_);
+    playPause_=new QPushButton("Play",previewPanel);
+    playPause_->setObjectName("VisualPlayPause");
+    controls->addWidget(playPause_);
+    playbackSpeed_=new QDoubleSpinBox(previewPanel);
+    playbackSpeed_->setObjectName("VisualPlaybackSpeed");
+    playbackSpeed_->setDecimals(1);
+    playbackSpeed_->setRange(-3600,3600);playbackSpeed_->setValue(90);
+    playbackSpeed_->setSuffix(" deg/s");
+    playbackSpeed_->setToolTip("Preview-only playback rate. Never exported as Gear V2 speed or RPM.");
+    controls->addWidget(playbackSpeed_);
     running_=new QCheckBox("Running",previewPanel);running_->setChecked(true);
     overloaded_=new QCheckBox("Overloaded",previewPanel);
     worn_=new QCheckBox("Worn",previewPanel);
@@ -114,11 +135,51 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     wearStage_=new QSpinBox(previewPanel);wearStage_->setRange(0,5);
     controls->addWidget(wearStage_);controls->addStretch();
     pl->addLayout(controls);
-    preview_=new QPlainTextEdit(previewPanel);
+
+    auto* assetRow=new QHBoxLayout;
+    auto* modelsButton=new QPushButton("Load actual mod model assets...",previewPanel);
+    modelsButton->setObjectName("VisualLoadAssets");
+    modelsButton->setToolTip("Choose the local mod's src/main/resources directory, or an unpacked resource pack with assets/");
+    assetRow->addWidget(modelsButton);
+    auto* texturesButton=new QPushButton("Add missing PNGs from Minecraft JAR...",previewPanel);
+    texturesButton->setObjectName("VisualAddTextures");
+    assetRow->addWidget(texturesButton);
+    rigAssetStatus_=new QLabel("3D geometry is not loaded. Choose a local Minecraft assets folder; no placeholder meshes are generated.",previewPanel);
+    rigAssetStatus_->setObjectName("VisualAssetStatus");
+    rigAssetStatus_->setWordWrap(true);
+    assetRow->addWidget(rigAssetStatus_,1);
+    pl->addLayout(assetRow);
+
+    auto* views=new QSplitter(Qt::Horizontal,previewPanel);
+    rigViewport_=new Viewport(views);
+    rigViewport_->setObjectName("VisualRigViewport");
+    rigViewport_->setMinimumSize(420,240);
+    {
+        Project empty=makeProject("Visual rig preview",{5,5,5});
+        empty.parts.clear();empty.cells.clear();empty.textures.clear();
+        BuildOptions opts;opts.showFormed=false;opts.showConstruction=false;opts.showGrid=true;
+        rigViewport_->setScene(empty,opts);
+        rigViewport_->resetCamera();
+    }
+    views->addWidget(rigViewport_);
+    preview_=new QPlainTextEdit(views);
     preview_->setObjectName("VisualPoseSample");
-    preview_->setReadOnly(true);preview_->setMinimumHeight(160);
-    pl->addWidget(preview_);
-    layout->addWidget(previewPanel,2);
+    preview_->setReadOnly(true);
+    preview_->setMinimumWidth(220);
+    preview_->setToolTip("Numeric pose data for diagnosing pivots, states, slider-crank closure and belt surface travel");
+    views->addWidget(preview_);
+    views->setStretchFactor(0,3);views->setStretchFactor(1,2);
+    pl->addWidget(views,1);
+    layout->addWidget(previewPanel,5);
+    playbackTimer_=new QTimer(this);
+    playbackTimer_->setInterval(33);
+    connect(modelsButton,&QPushButton::clicked,this,&VisualRuntimeDialog::loadRigAssets);
+    connect(texturesButton,&QPushButton::clicked,this,&VisualRuntimeDialog::loadExtraTextures);
+    connect(playPause_,&QPushButton::clicked,this,[this](){
+        if(playbackTimer_->isActive()){playbackTimer_->stop();playPause_->setText("Play");}
+        else{playbackTimer_->start();playPause_->setText("Pause");}
+    });
+    connect(playbackTimer_,&QTimer::timeout,this,&VisualRuntimeDialog::advancePlayback);
     status_=new QLabel(this);status_->setWordWrap(true);layout->addWidget(status_);
     auto* buttons=new QHBoxLayout;
     auto* validateButton=new QPushButton("Validate against Java v1",this);
@@ -144,18 +205,27 @@ VisualRuntimeDialog::VisualRuntimeDialog(const QJsonObject& existing,QWidget* pa
     connect(manifest_,&QPlainTextEdit::textChanged,this,changed);
     connect(scene_,&QPlainTextEdit::textChanged,this,changed);
     connect(machine_,&QComboBox::currentTextChanged,this,[this,sources](const QString& machine){
+        syncAngleSource();
         sources->setText("Java angles: "+VisualContract::availableAngles(machine).join(", ")+
           "    |    Java integers: "+(VisualContract::availableIntegers(machine).isEmpty()
              ?QString("none"):VisualContract::availableIntegers(machine).join(", ")));
         sample();
     });
-    connect(shaftAngle_,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this](double){sample();});
+    connect(angleSource_,&QComboBox::currentTextChanged,this,[this](const QString& source){
+        QSignalBlocker block(shaftAngle_);
+        shaftAngle_->setValue(previewAngles_.value(source,0));
+        sample();
+    });
+    connect(shaftAngle_,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this](double value){
+        previewAngles_[angleSource_->currentText()]=value;sample();
+    });
     connect(wearStage_,QOverload<int>::of(&QSpinBox::valueChanged),this,[this](int){sample();});
     for(auto* c:{running_,overloaded_,worn_})
         connect(c,&QCheckBox::toggled,this,[this](bool){sample();});
     sources->setText("Java angles: "+VisualContract::availableAngles(machine_->currentText()).join(", ")+
       "    |    Java integers: "+(VisualContract::availableIntegers(machine_->currentText()).isEmpty()
           ?QString("none"):VisualContract::availableIntegers(machine_->currentText()).join(", ")));
+    syncAngleSource();
     validate();
 }
 QJsonObject VisualRuntimeDialog::metadata() const{
@@ -188,11 +258,90 @@ void VisualRuntimeDialog::sample(){
     m["_studio_machine"]=machine_->currentText();
     QMap<QString,double> inputs;
     for(const auto& source:VisualContract::availableAngles(machine_->currentText()))
-        inputs[source]=shaftAngle_->value();
-    const auto pose=VisualContract::sample(m,s,inputs,running_->isChecked(),overloaded_->isChecked(),
-                                           worn_->isChecked(),wearStage_->value(),error);
-    if(!error.isEmpty())preview_->setPlainText(error);
-    else preview_->setPlainText(pretty(pose));
+        inputs[source]=previewAngles_.value(source,0.0);
+    const auto pose=VisualContract::sample(m,s,inputs,running_->isChecked(),
+        overloaded_->isChecked(),worn_->isChecked(),wearStage_->value(),error);
+    if(!error.isEmpty()){preview_->setPlainText(error);rigViewport_->clearRig();return;}
+    preview_->setPlainText(pretty(pose));
+    RigPose transforms;
+    if(!RigTransforms::evaluate(machine_->currentText(),m,s,inputs,running_->isChecked(),
+           overloaded_->isChecked(),worn_->isChecked(),wearStage_->value(),transforms,error)){
+        rigAssetStatus_->setText("Animation pose cannot be evaluated: "+error);return;
+    }
+    rigViewport_->setRigPose(transforms);
+}
+
+void VisualRuntimeDialog::syncAngleSource(){
+    const QString previous=angleSource_->currentText();
+    const auto sources=VisualContract::availableAngles(machine_->currentText());
+    QSignalBlocker blocker(angleSource_);
+    angleSource_->clear();angleSource_->addItems(sources);
+    if(sources.contains(previous))angleSource_->setCurrentText(previous);
+    if(!angleSource_->currentText().isEmpty()){
+        QSignalBlocker angleBlocker(shaftAngle_);
+        shaftAngle_->setValue(previewAngles_.value(angleSource_->currentText(),0));
+    }
+}
+void VisualRuntimeDialog::advancePlayback(){
+    const QString source=angleSource_->currentText();
+    if(source.isEmpty())return;
+    // Explicit preview-only signed speed; neither synchronized nor written to
+    // JSON as physical machine RPM. A bounded fixed timer avoids extra GL data.
+    const double degrees=previewAngles_.value(source,0)+playbackSpeed_->value()/30.0;
+    const double wrapped=degrees>9999999?-9999999:degrees<-9999999?9999999:degrees;
+    previewAngles_[source]=wrapped;
+    {
+        QSignalBlocker blocker(shaftAngle_);
+        shaftAngle_->setValue(wrapped);
+    }
+    sample();
+}
+void VisualRuntimeDialog::loadRigAssets(){
+    QSettings settings;
+    const QString folder=QFileDialog::getExistingDirectory(this,
+       "Choose mod resources root containing assets/ (e.g. src/main/resources)",
+       settings.value("animation/asset-root").toString());
+    if(folder.isEmpty())return;
+    QJsonObject m,s;QString error;
+    if(!parsePair(m,s,error)){
+        QMessageBox::warning(this,"Cannot load model geometry from invalid scene",error);return;
+    }
+    RigAssets imported;
+    if(!RigAssetLoader::load(folder,s,imported)){
+        QMessageBox::warning(this,"Cannot read local model assets",imported.error);return;
+    }
+    rigAssets_=std::move(imported);
+    rigAssetsLoaded_=true;
+    settings.setValue("animation/asset-root",folder);
+    rigViewport_->setRigModels(rigAssets_.models,rigAssets_.textureProject.textures);
+    sample();
+    rigViewport_->frameRig();
+    const QString message=QString("Real models: %1 loaded, %2 unresolved; PNGs: %3 missing.")
+        .arg(rigAssets_.loadedModels.size()).arg(rigAssets_.missingModels.size())
+        .arg(rigAssets_.missingTextures.size());
+    rigAssetStatus_->setText(message);
+    rigAssetStatus_->setToolTip((rigAssets_.missingModels+rigAssets_.missingTextures+rigAssets_.warnings).join("\n"));
+    if(!rigAssets_.warnings.isEmpty()||!rigAssets_.missingModels.isEmpty()){
+        QMessageBox::information(this,"Rig preview dependencies",
+            message+"\n\n"+(rigAssets_.missingModels+rigAssets_.warnings).mid(0,12).join("\n"));
+    }
+}
+void VisualRuntimeDialog::loadExtraTextures(){
+    if(!rigAssetsLoaded_){QMessageBox::information(this,"Load models first",
+        "Load the actual local model assets so Studio knows which PNGs are referenced.");return;}
+    const QString source=QFileDialog::getOpenFileName(this,
+       "Select local Minecraft client JAR or resource pack",
+       {}, "Minecraft client / resource pack (*.jar *.zip)");
+    if(source.isEmpty())return;
+    const auto report=RigAssetLoader::addTextures(rigAssets_,source);
+    if(!report.error.isEmpty()){
+        QMessageBox::warning(this,"Cannot import PNGs",report.error);return;
+    }
+    rigViewport_->setRigModels(rigAssets_.models,rigAssets_.textureProject.textures);
+    sample();
+    rigAssetStatus_->setText(QString("Real models: %1 loaded, %2 unresolved; PNGs: %3 missing.")
+        .arg(rigAssets_.loadedModels.size()).arg(rigAssets_.missingModels.size())
+        .arg(rigAssets_.missingTextures.size()));
 }
 void VisualRuntimeDialog::exportFiles(){
     QJsonObject m,s;QString error;QStringList warnings;
