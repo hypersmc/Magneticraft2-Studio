@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QPixmap>
 #include <QScrollArea>
 #include <QSizePolicy>
 #include <QVBoxLayout>
@@ -88,9 +89,20 @@ StartPage::StartPage(QWidget* parent):QWidget(parent) {
     content->setContentsMargins(46,37,46,44);
     content->setSpacing(15);
 
-    auto* welcome=label("MAGNETICRAFT²  /  STUDIO","StartEyebrow",surface);
-    content->addWidget(welcome);
-    content->addWidget(label("Make something worth building.","StartHeroTitle",surface));
+    auto* heroRow=new QHBoxLayout;
+    heroRow->setSpacing(16);
+    auto* appLogo=new QLabel(surface);
+    appLogo->setObjectName("StartAppLogo");
+    appLogo->setFixedSize(64,64);
+    appLogo->setPixmap(QPixmap(":/studio/app-icon.png").scaled(
+        64,64,Qt::KeepAspectRatio,Qt::SmoothTransformation));
+    heroRow->addWidget(appLogo,0,Qt::AlignVCenter);
+    auto* heroText=new QVBoxLayout;
+    heroText->setSpacing(4);
+    heroText->addWidget(label("MAGNETICRAFT²  /  STUDIO","StartEyebrow",surface));
+    heroText->addWidget(label("Make something worth building.","StartHeroTitle",surface));
+    heroRow->addLayout(heroText,1);
+    content->addLayout(heroRow);
     content->addWidget(label("A Minecraft modeling workspace for individual blocks, large multiblocks and everything in between.",
                              "StartHeroSubtitle",surface));
     content->addSpacing(15);

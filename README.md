@@ -202,3 +202,13 @@ preview for a complete in-game rendering.
 ## UV workspace — all six cube faces (v0.6)
 
 Choose **UV / Texture** while a cuboid is selected. Studio shows an unfolded preview of **all six faces** at once, a larger editable texture atlas, a live 3D preview and per-face numeric controls. Click any side in the overview (or use the face selector) to edit it; independent texture IDs and imported UVs are preserved. Faces sharing the selected PNG appear as dashed overlays on the atlas. Details: [UV workspace guide](docs/UV_WORKSPACE.md).
+
+## Application icon
+
+The current, provisional Studio logo is the supplied orange gear with a cream
+**M**, kept as a lossless RGBA PNG at `assets/magneticraft2-studio.png`.
+The image is embedded in the Qt executable for its native window icon and
+start screen; installation supplies standard Linux hicolor PNG icon sizes
+(16, 32, 48, 64, 128, and 256 pixels). The KDE/desktop launcher references
+`magneticraft2-studio`, so it resolves to the same image. The logo is a
+replaceable branding asset, not a dependency of the project format.

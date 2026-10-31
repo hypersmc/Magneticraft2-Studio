@@ -4,6 +4,8 @@
 
 #include <QApplication>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QIcon>
 #include <QFont>
 #include <QPalette>
 #include <QPixmap>
@@ -43,7 +45,17 @@ int main(int argc,char** argv) {
     pal.setColor(QPalette::Disabled,QPalette::Text,QColor("#647887"));
     app.setPalette(pal);
     app.setStyleSheet(studio::editorStyle);
+    // The icon is bundled into the native executable, so running directly from
+    // the build tree doesn't require an installed desktop theme icon.
+    QGuiApplication::setDesktopFileName("magneticraft2-studio");
+    const QIcon studioIcon(":/studio/app-icon.png");
+    if (studioIcon.isNull()) {
+        qCritical("Bundled Magneticraft2 Studio icon failed to load");
+        return 8;
+    }
+    app.setWindowIcon(studioIcon);
     studio::MainWindow window;
+    window.setWindowIcon(studioIcon);
     bool smoke=false;
     bool homeSmoke=false;
     bool openedProject=false;

@@ -19,6 +19,12 @@ jobs:
         run: cmake --build build --parallel 2
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
+      - name: Verify installed desktop icon assets
+        run: |
+          cmake --install build --prefix "$PWD/build/staging"
+          test -s build/staging/share/icons/hicolor/16x16/apps/magneticraft2-studio.png
+          test -s build/staging/share/icons/hicolor/256x256/apps/magneticraft2-studio.png
+          test -s build/staging/share/applications/magneticraft2-studio.desktop
       - name: Native start page smoke test
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./build/magneticraft2-studio --home-smoke --screenshot build/studio-home.png
       - name: Native GUI startup smoke test (software OpenGL)

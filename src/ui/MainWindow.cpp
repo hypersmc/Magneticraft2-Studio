@@ -22,6 +22,7 @@
 #include <QApplication>
 #include <QBuffer>
 #include <QImage>
+#include <QPixmap>
 #include <QImageReader>
 #include <QFileInfo>
 #include <QTimer>
@@ -712,7 +713,13 @@ void MainWindow::createMenus(){
     auto* header=addToolBar("Studio header");
     header->setObjectName("StudioHeader");
     header->setMovable(false);header->setFloatable(false);
-    auto* brand=new QLabel("◈  MAGNETICRAFT²",this);
+    auto* brandIcon=new QLabel(this);
+    brandIcon->setObjectName("BrandLogo");
+    brandIcon->setFixedSize(30,30);
+    brandIcon->setPixmap(QPixmap(":/studio/app-icon.png").scaled(
+        30,30,Qt::KeepAspectRatio,Qt::SmoothTransformation));
+    header->addWidget(brandIcon);
+    auto* brand=new QLabel("MAGNETICRAFT²",this);
     brand->setObjectName("Brand");header->addWidget(brand);
     auto* identity=new QWidget(this);
     auto* identityLayout=new QVBoxLayout(identity);

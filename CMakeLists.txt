@@ -24,8 +24,10 @@ if(NOT STUDIO_HEADLESS_ONLY)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Core Widgets Gui OpenGL OpenGLWidgets)
     find_package(ZLIB REQUIRED)
     set(CMAKE_AUTOMOC ON)
+    set(CMAKE_AUTORCC ON)
     add_executable(magneticraft2-studio
         src/main.cpp
+        src/ui/StudioResources.qrc
         src/io/ProjectIO.hpp src/io/ProjectIO.cpp
         src/io/BlockModelImport.hpp src/io/BlockModelImport.cpp
         src/io/TextureAssets.hpp src/io/TextureAssets.cpp
@@ -39,7 +41,7 @@ if(NOT STUDIO_HEADLESS_ONLY)
     target_link_libraries(magneticraft2-studio PRIVATE studio_core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets ZLIB::ZLIB)
     install(TARGETS magneticraft2-studio RUNTIME DESTINATION bin)
     install(FILES packaging/magneticraft2-studio.desktop DESTINATION share/applications)
-    install(FILES studio-icon.svg DESTINATION share/icons/hicolor/scalable/apps RENAME magneticraft2-studio.svg)
+    install(DIRECTORY packaging/icons/hicolor/ DESTINATION share/icons/hicolor)
     install(DIRECTORY samples/ DESTINATION share/magneticraft2-studio/samples)
 endif()
 
