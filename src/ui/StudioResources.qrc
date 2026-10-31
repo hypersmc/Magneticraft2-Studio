@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/studio">
+        <file alias="app-icon.png">../../assets/magneticraft2-studio.png</file>
+    </qresource>
+</RCC>

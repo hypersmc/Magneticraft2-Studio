@@ -1,0 +1,86 @@
+# Studio editor experience — v0.5 direction
+
+The v0.4 build proved that C++, Qt and OpenGL could draw cubes, transform them,
+and display texture assets. It did **not** yet feel like an editor. This iteration
+focuses on the actual authoring workflow rather than increasing the feature count.
+
+## The job Studio must solve
+
+1. Author a **build layout**, including controller and inputs/outputs.
+2. Author the **formed visual model** at arbitrary Minecraft-block scale.
+3. Inspect/select/rename/organize components without fighting panels.
+4. Import existing Java Blockbench/Minecraft model geometry as editable cuboids,
+   then assign the mod's PNG textures and correct UVs.
+5. Keep all editable sources portable in a Studio document.
+
+## Workspace contract
+
+- **Build** presents the construction layer editor and its palette. Geometry tools
+  are hidden; the selected layer and controller location remain visible.
+- **Model** gives priority to the 3D canvas, a vertical tool rail and searchable
+  Outliner. Model creation and navigation are always one action away.
+- **UV / Texture** remains attached to the *same* formed model and selection,
+  surfacing face/texture tools instead of creating a separate file/document.
+- The Object Inspector is contextual to the selected model part. Model geometry
+  can be edited both in the viewport and with precise 1/16-block coordinates.
+- Undo/redo, project save, and a true **frame selected** action work across workflows.
+
+## Ore Washer acceptance exercise
+
+The shipped demo is **not** the current real Ore Washer; it is an editable
+historical proof-of-concept. The acceptance test must therefore use the actual
+Forge resource files, not the demo:
+
+1. Use **File > Open Ore Washer reference project** to load the actual 3×2×3
+   construction layout and static `mechanical_ore_washer_north.json` model
+   from the bundled samples (origin: the Magneticraft2 mod repository).
+2. The importer anchors pixel-space geometry to the build controller;
+   it handles the model's unusually large/negative coordinates.
+3. Use the Outliner search to locate and rename groups and inspect large numbers
+   of elements. Move a beam with the gizmo; verify snapping and undo/redo.
+4. Import matching PNG textures from the mod and inspect face UVs.
+5. Save/reopen the Studio project. Verify geometry, selection, references, and
+   the edited UVs persist.
+6. Load the bundled rotor and input-pulley JSONs as **separate groups**. Pivot and motion import/creation
+   is a follow-up milestone, not silently assumed from a baked model.
+
+## Known limitations (do not overstate)
+
+- Minecraft JSON import supports **`elements`, face UV, aliases, and axis-angle
+  element rotations**. Unresolved `parent`/custom loaders are explicitly rejected
+  or warned. It does not yet support Minecraft's `rescale` exactly.
+- Imported namespace texture references are not automatic PNG bytes. Load the
+  PNGs separately. Vanilla references use the procedural preview if missing.
+- Hierarchy is group/part organization, **not** an implemented parent-child
+  transform rig. Multi-selection and paintbrush UV editing are not implemented.
+- The Forge exporter currently exports construction JSON; formed-model runtime
+  and tiled block cell models are future work.
+- Screenshots from CI verify window/controls and basic event handling; real
+  Arch Linux/KDE input testing remains the next required acceptance step.
+
+## Post-rework priorities
+
+- Real import mapping for the washer's moving model parts, with named pivots.
+- Multi-select, true group transforms, keyboard transform entry and align tools.
+- Texture atlas/library and paint workflow using actual Magneticraft2 assets.
+- Safe, validated tiled model export to the Forge mod (separate integration PR).
+
+Bundled model source references:
+- `samples/ore_washer_models/mechanical_ore_washer_north.json`
+- `samples/ore_washer_models/mechanical_ore_washer_rotor.json`
+- `samples/ore_washer_models/mechanical_ore_washer_input_pulley.json`
+
+They are copied from the user's `hypersmc/magneticraft2-1.20.x` repository;
+they are not recreated approximations. The dynamic renderer's additional runtime
+transforms remain separate and are **not** inferred by the JSON importer.
+
+### Accurate texture workflow
+
+Import Java model geometry and then load missing resources from an installed
+Minecraft client JAR or unpacked resource pack. Resolve the exact
+`namespace:block/path` to `assets/namespace/textures/block/path.png`. Give
+immediate, visible feedback about unresolved references: magenta checker +
+list of missing IDs. Never show an invented spruce/copper material as if it
+were the real texture. Embed only required textures in the editable project.
+This operation must be offline, leave custom PNGs untouched, and not bundle
+Minecraft assets in the public source repository.
