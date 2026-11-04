@@ -1,0 +1,51 @@
+name: Animation test toolchain
+on:
+  push:
+    branches: [feature/json-animation-export]
+    paths: [.github/workflows/animation-test-toolchain.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Install test-only native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev libqt6opengl6-dev libgoogle-gson-java libgl-dev libopengl-dev libglx-dev libegl-dev
+      - name: Collect Qt development files and redistributable test libraries
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess, tarfile
+          paths = set()
+          roots = ['/usr/include/x86_64-linux-gnu/qt6', '/usr/lib/qt6', '/usr/lib/x86_64-linux-gnu/qt6', '/usr/share/qt6', '/usr/include/GL', '/usr/include/EGL', '/usr/include/KHR']
+          for root in roots:
+              p = Path(root)
+              if p.exists():
+                  paths.add(p)
+                  paths.update(p.rglob('*'))
+          lib = Path('/usr/lib/x86_64-linux-gnu')
+          for pattern in ('libQt6*', 'libicu*.so*', 'libdouble-conversion*.so*', 'libb2.so*', 'libxcb-cursor.so*', 'libOpenGL.so*', 'libGLX.so', 'libGL.so', 'libEGL.so'):
+              paths.update(lib.glob(pattern))
+          for p in (lib / 'cmake').glob('Qt6*'):
+              paths.add(p)
+              paths.update(p.rglob('*'))
+          paths.update((lib / 'pkgconfig').glob('Qt6*'))
+          paths.update(Path('/usr/share/java').glob('gson*.jar'))
+          paths.update(Path('/usr/bin').glob('*qmake6'))
+          with tarfile.open('qt6-animation-test-toolchain.tar.gz', 'w:gz') as archive:
+              for p in sorted(paths):
+                  if p.is_file() or p.is_symlink():
+                      archive.add(p, arcname=str(p).lstrip('/'), recursive=False)
+          Path('qt-package-versions.txt').write_text(subprocess.check_output(['dpkg-query','-W','qt6-base-dev','libqt6opengl6-dev','libgoogle-gson-java','libgl-dev'], text=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: animation-test-qt6-toolchain
+          retention-days: 1
+          path: |
+            qt6-animation-test-toolchain.tar.gz
+            qt-package-versions.txt

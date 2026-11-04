@@ -1,5 +1,6 @@
 #pragma once
 #include "core/Geometry.hpp"
+#include "io/RigTransforms.hpp"
 
 #include <QMatrix4x4>
 #include <QOpenGLBuffer>
@@ -33,6 +34,13 @@ public:
     ~Viewport() override;
     void setScene(const Project& p,BuildOptions options);
     void invalidateTextures(); // Called when switching project or replacing embedded PNG data.
+    void setRigModels(const std::map<std::string,Geometry>& models,
+                      const std::map<std::string,std::string>& textures,
+                      const std::map<std::string,double>& beltRepeats={});
+    void setRigPose(const RigPose& pose);
+    void setRigVisible(bool visible); // Share model viewport without destroying cached meshes.
+    void clearRig();
+    void frameRig();
     void resetCamera();
     void focusSelected(); // Zoom/orbit around the active cuboid, preserving camera orientation.
     void setSelection(int index);
@@ -74,6 +82,7 @@ private:
     int pickPart(const QPoint& at) const;
     QPointF projectPoint(Vec3 pos) const;
     void uploadBuffers();
+    void uploadRigBuffers();
     QOpenGLTexture* getTexture(const std::string& id,const std::string& material);
     void drawBuffer(QOpenGLBuffer& buffer, const std::vector<Vertex>& verts,GLenum primitive);
     bool workPlaneAt(const QPoint& screen,Vec3& point) const;
@@ -91,6 +100,18 @@ private:
     QThreadPool pool_;
     QTimer poll_;
     Geometry mesh_;
+    struct RigGpuModel {
+        QOpenGLBuffer vertices{QOpenGLBuffer::VertexBuffer};
+        std::vector<TextureDraw> draws;
+        GLsizei count=0;
+    };
+    std::map<std::string,Geometry> rigSourceMeshes_;
+    std::map<std::string,std::unique_ptr<RigGpuModel>> rigGpuMeshes_;
+    RigPose rigPose_;
+    std::map<std::string,std::string> rigTextures_; // Independent from authored project PNGs.
+    bool rigVisible_=false;
+    std::map<std::string,double> rigBeltRepeats_;
+    bool rigGpuDirty_=false;
     struct CachedTexture { std::size_t signature=0;std::unique_ptr<QOpenGLTexture> gpu; };
     std::map<std::string,CachedTexture> textureCache_;
     bool texturesDirty_=false;

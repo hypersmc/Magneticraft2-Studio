@@ -1,0 +1,40 @@
+name: Java animation contract
+on:
+  push:
+    branches: [feature/json-animation-export]
+  pull_request:
+    branches: [native-linux]
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read-only merged Java reference
+        uses: actions/checkout@v4
+        with:
+          repository: hypersmc/magneticraft2-1.20.x
+          ref: 5e5cb3440daa8bd642574c5f473bc5028fecfcb0
+          path: .contract-mod
+          persist-credentials: false
+      - name: Java item and progress reference contract
+        run: node .contract-mod/tools/animation/check-item-progress-contract.mjs
+      - name: Preserve reproducible source inputs
+        if: always()
+        run: |
+          mkdir -p contract-evidence
+          git rev-parse HEAD > contract-evidence/studio-commit.txt
+          git -C .contract-mod rev-parse HEAD > contract-evidence/java-commit.txt
+          git archive --format=tar.gz -o contract-evidence/studio-source.tar.gz HEAD
+          git -C .contract-mod archive --format=tar.gz -o "$GITHUB_WORKSPACE/contract-evidence/java-reference.tar.gz" HEAD
+      - name: Contract source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: animation-contract-sources
+          retention-days: 7
+          path: contract-evidence/

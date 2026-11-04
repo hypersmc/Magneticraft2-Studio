@@ -25,6 +25,13 @@ int main(){
     auto selected=buildGeometry(project,opt);
     assert(selected.triangles.size()==36);
     assert(selected.lines.size()>two.lines.size());
+    project.parts.front().rigComponentId="drum";
+    BuildOptions boundView=opt;
+    boundView.selectedPart=-1;
+    boundView.hideRigComponents.insert("drum");
+    assert(buildGeometry(project,boundView).triangles.empty());
+    boundView.hideRigComponents.clear();
+    assert(buildGeometry(project,boundView).triangles.size()==36);
     auto center=rotateEuler({1,0,0},{0,0,0},{0,90,0});
     assert(near(center.x,0) && near(center.z,-1));
     auto transformed=project.parts.front();

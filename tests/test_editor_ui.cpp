@@ -5,6 +5,11 @@
 #include "ui/Viewport.hpp"
 #include "ui/UvFaceOverview.hpp"
 #include "ui/UvEditor.hpp"
+#include "ui/AnimationWorkspace.hpp"
+#include "io/VisualContract.hpp"
+#include <QDoubleSpinBox>
+#include <QJsonObject>
+#include <QJsonArray>
 #include <QComboBox>
 #include <QApplication>
 #include <QToolButton>
@@ -13,12 +18,27 @@
 #include <QDockWidget>
 #include <QTest>
 #include <QTimer>
+#include <QMessageBox>
 #include <QDebug>
+#include <cmath>
 
 using namespace studio;
 int main(int argc,char** argv){
     QApplication app(argc,argv);
     app.setStyleSheet(studio::editorStyle);
+    bool unexpectedModal=false;
+    QString unexpectedText;
+    QTimer modalWatch;
+    QObject::connect(&modalWatch,&QTimer::timeout,&app,[&](){
+        if(auto* dialog=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())){
+            unexpectedModal=true;
+            unexpectedText=dialog->windowTitle()+": "+dialog->text();
+            qCritical().noquote()<<"Unexpected modal dialog in Studio UX test:"<<unexpectedText;
+            dialog->reject();
+        }
+    });
+    modalWatch.start(75);
+    qInfo("UX CHECKPOINT: creating main window");
     MainWindow editor;
     editor.resize(1600,940);editor.show();
     QTest::qWait(240);
@@ -31,12 +51,14 @@ int main(int argc,char** argv){
     auto* washer=home->findChild<QPushButton*>("ExampleOreWasher");
     auto* sifter=home->findChild<QPushButton*>("ExampleSifter");
     if(!newJava||!example||!washer||!sifter){qCritical("Start page project and examples missing");return 11;}
+    qInfo("UX CHECKPOINT: new Java block");
     newJava->click();QTest::qWait(250);
     if(editor.isAtHome()||editor.projectKind()!=ProjectKind::JavaBlock){
         qCritical("Java model card did not create the right project type");return 12;
     }
     editor.openHome();QTest::qWait(100);
     if(!editor.isAtHome()){qCritical("Home navigation failed");return 13;}
+    qInfo("UX CHECKPOINT: workshop example");
     example->click();QTest::qWait(600);
     if(editor.isAtHome()||editor.projectKind()!=ProjectKind::Multiblock){
         qCritical("Workshop example failed to open");return 14;
@@ -74,6 +96,7 @@ int main(int argc,char** argv){
             tree->setCurrentItem(group->child(0));break;
         }
     }
+    qInfo("UX CHECKPOINT: UV workspace");
     uv->click();QTest::qWait(250);
     auto* texture=editor.findChild<QDockWidget*>("TextureDock");
     auto* overview=editor.findChild<UvFaceOverview*>("UvFaceOverview");
@@ -91,6 +114,110 @@ int main(int argc,char** argv){
     if(atlas->width()<260){qCritical("UV canvas is still constrained to a tiny dock");return 16;}
     if(argc>2 && !editor.grab().save(QString::fromLocal8Bit(argv[2]))){qCritical("Could not capture six-face UV workspace");return 17;}
     model->click();QTest::qWait(180);
+    // Animate lives in the same editor and uses the same OpenGL viewport and
+    // Studio project document. It must not create a second machine viewer.
+    auto* animate=editor.findChild<QToolButton*>("WorkspaceAnimate");
+    auto* animation=editor.findChild<AnimationWorkspace*>("AnimationWorkspacePanel");
+    if(!animate||!animation){qCritical("Missing integrated Animate workspace");return 18;}
+    qInfo("UX CHECKPOINT: opening Animate tab");
+    animate->click();QTest::qWait(150);
+    if(!animate->isChecked()||!animation->isVisible()||!viewport->isVisible()){
+        qCritical("Animate did not reuse the existing visible 3D viewport");return 19;
+    }
+    auto* machine=animation->findChild<QComboBox*>("AnimationMachine");
+    auto* component=animation->findChild<QComboBox*>("AnimationComponent");
+    auto* source=animation->findChild<QComboBox*>("AnimationPhysicalSource");
+    auto* phase=animation->findChild<QDoubleSpinBox*>("AnimationRotationPhase");
+    auto* addRotation=animation->findChild<QPushButton*>("AnimationApplyRotation");
+    if(!machine||!component||!source||!phase||!addRotation)return 20;
+    qInfo("UX CHECKPOINT: switching to Ore Washer");
+    machine->setCurrentText("mechanical_ore_washer");
+    QTest::qWait(120);
+    if(source->findText("trommel")<0||source->findText("mechanical_input")>=0){
+        qCritical("Ore Washer kept incorrect Grinder angle bindings");return 21;
+    }
+    component->setCurrentText("drum");
+    // Regression: pressing Add with the "New rotation" selection must
+    // update an existing target/condition track rather than create a
+    // duplicate invalid 'always' driver and open a modal error.
+    auto* rotationTracks=animation->findChild<QComboBox*>("AnimationRotationTrack");
+    if(!rotationTracks)return 31;
+    rotationTracks->setCurrentIndex(0);
+    phase->setValue(45.0);
+    qInfo("UX CHECKPOINT: editing rotation");
+    addRotation->click();
+    QTest::qWait(150);
+    if(unexpectedModal){qCritical().noquote()<<unexpectedText;return 30;}
+    QString error;
+    const auto runtime=animation->metadata();
+    if(!VisualContract::validatePair("mechanical_ore_washer",
+         runtime.value("manifest").toObject(),runtime.value("scene").toObject(),error)){
+        qCritical("Integrated rotation edit invalid: %s",qPrintable(error));return 22;
+    }
+    bool hasDrumRotation=false;
+    const auto groups=runtime.value("scene").toObject().value("animations").toObject();
+    for(auto it=groups.begin();it!=groups.end();++it)
+        for(const auto& value:it.value().toObject().value("tracks").toArray()){
+            const auto track=value.toObject();
+            if(track.value("target")=="drum"&&track.value("property")=="rotation"&&
+               std::abs(track.value("phase_degrees").toDouble()-45.0)<0.001)
+                hasDrumRotation=true;
+        }
+    if(!hasDrumRotation){
+        qCritical("Rotation edit was not applied to existing runtime scene");return 23;
+    }
+    // Bind an actual cuboid created in Studio (not a separate JAR model).
+    // The preview must move the original geometry under its Java rig driver.
+    QTreeWidgetItem* drumPart=nullptr;
+    for(int i=0;i<tree->topLevelItemCount();i++){
+        auto* group=tree->topLevelItem(i);
+        for(int k=0;k<group->childCount();k++){
+            auto* item=group->child(k);
+            if(item->text(0)=="Drum" && item->data(0,Qt::UserRole).toInt()>=0)
+                drumPart=item;
+        }
+    }
+    if(!drumPart)return 25;
+    tree->setCurrentItem(drumPart);QTest::qWait(100);
+    auto* bind=animation->findChild<QPushButton*>("AnimationBindPart");
+    auto* physicalAngle=animation->findChild<QDoubleSpinBox*>("AnimationPhysicalAngle");
+    if(!bind||!physicalAngle||!bind->isEnabled())return 26;
+    qInfo("UX CHECKPOINT: binding authored cuboid");
+    bind->click();QTest::qWait(250);
+    // An authored cuboid is normally centered in its own modeling space.
+    // The imported Java joint uses a controller-origin pivot. Explicitly
+    // request the authored cuboid pivot to keep it mechanically in place.
+    auto* adoptPivot=animation->findChild<QPushButton*>("AnimationUsePartPivot");
+    if(!adoptPivot || !adoptPivot->isEnabled())return 32;
+    adoptPivot->click();QTest::qWait(150);
+    const auto rigData=animation->metadata().value("scene").toObject();
+    const auto piv=rigData.value("components").toObject().value("drum").toObject()
+                           .value("pivot").toArray();
+    if(piv.size()!=3 || std::abs(piv[0].toDouble()-2.5)>0.0001 ||
+       std::abs(piv[1].toDouble()-1.6)>0.0001 ||
+       std::abs(piv[2].toDouble()-2.5)>0.0001){
+        qCritical("Authored drum pivot did not align with its selected geometry");
+        return 33;
+    }
+    if(!animation->boundComponentIds().contains("drum")){
+        qCritical("A modeled cuboid could not be assigned to the drum joint");return 27;
+    }
+    physicalAngle->setValue(0);QTest::qWait(150);
+    qInfo("UX CHECKPOINT: comparing GPU rig frames");
+    const QImage beforeFrame=viewport->grabFramebuffer();
+    physicalAngle->setValue(90);QTest::qWait(180);
+    const QImage afterFrame=viewport->grabFramebuffer();
+    if(beforeFrame.isNull()||afterFrame.isNull()||beforeFrame==afterFrame){
+        qCritical("Authored drum cuboid did not visually rotate");return 28;
+    }
+    if(argc>3 && !editor.grab().save(QString::fromLocal8Bit(argv[3]))){
+        qCritical("Could not capture integrated Animate workspace");return 29;
+    }
+    qInfo("UX CHECKPOINT: leave Animate");
+    model->click();QTest::qWait(130);
+    if(animation->isVisible()||!model->isChecked()||!viewport->isVisible()){
+        qCritical("Leaving Animate hid the main viewport or leaked workspace");return 24;
+    }
     if(argc>1 && !editor.grab().save(QString::fromLocal8Bit(argv[1]))){qCritical("Could not write UI screenshot");return 9;}
     qInfo("Editor UX test passed: Build, Model, UV, Outliner search and OpenGL");
     return 0;
